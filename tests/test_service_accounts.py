@@ -41,7 +41,7 @@ def test_an_ordinary_address_is_a_person_even_if_never_written_to():
 
 
 def test_a_person_at_a_normal_address_is_never_a_service():
-    assert not is_service("jen@ascend.vc", contacted=set(), automated=False)
+    assert not is_service("nadia@secondco.io", contacted=set(), automated=False)
 
 
 # -- it reaches the roster -------------------------------------------------
@@ -49,10 +49,10 @@ def test_a_person_at_a_normal_address_is_never_a_service():
 
 def test_the_roster_marks_services():
     people = {p.address: p for p in build_people(
-        [row("talent@angel.co"), row("jen@ascend.vc")], ME, {},
-        contacted={"jen@ascend.vc"}, automated={"talent@angel.co"})}
+        [row("talent@angel.co"), row("nadia@secondco.io")], ME, {},
+        contacted={"nadia@secondco.io"}, automated={"talent@angel.co"})}
     assert people["talent@angel.co"].is_service is True
-    assert people["jen@ascend.vc"].is_service is False
+    assert people["nadia@secondco.io"].is_service is False
 
 
 def test_services_still_appear_in_the_roster():

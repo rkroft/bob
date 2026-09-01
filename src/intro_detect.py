@@ -161,8 +161,9 @@ SUBJECT_INTRO_ONLY = re.compile(
 )
 
 # Two names joined by a separator AND an intro word: "Nadia/Alice intro",
-# "Accelerate Wind/Rachel Intro". Very high precision — a subject in this shape
-# is essentially never anything else.
+# "Fourthco/Alice Intro" — a company on one side is as common as a person.
+# Very high precision: a subject in this shape is essentially never anything
+# else.
 SUBJECT_PAIR_INTRO = re.compile(
     r"[A-Za-z]{2,}\s*(?:/|\+|&|\bx\b|\band\b|\bto\b)\s*[A-Za-z]{2,}[^\\n]{0,40}?"
     r"\bintro(?:duction)?\b|"

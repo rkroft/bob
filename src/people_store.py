@@ -63,9 +63,10 @@ def is_service(address: str, contacted, automated: bool = False) -> bool:
     introductions simply go unanswered. Only together do they mean much: you
     reply to humans, and you do not reply to a mailer.
 
-    Discovered from AngelList's 2014 talent product, which sent five real
-    introductions signed "New match: Introducing Rachel to Maryam at GemShare".
-    The introductions were genuine; there was nobody to thank for them.
+    Discovered from a talent-matching product that sent five real
+    introductions from an automated address, each signed with the product's
+    own name rather than a person's. The introductions were genuine; there
+    was nobody to thank for them.
     """
     # `None` means the evidence was never gathered, which is NOT the same as
     # gathering it and finding nothing. Without it, calling anything a service
