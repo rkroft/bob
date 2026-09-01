@@ -22,7 +22,7 @@ def row(introducer):
 
 
 def test_a_role_address_you_never_wrote_to_is_a_service():
-    assert is_service("talent@angel.co", contacted=set(), automated=True)
+    assert is_service("talent@jobs.example.com", contacted=set(), automated=True)
 
 
 def test_a_role_address_you_have_written_to_is_a_person():
@@ -49,21 +49,21 @@ def test_a_person_at_a_normal_address_is_never_a_service():
 
 def test_the_roster_marks_services():
     people = {p.address: p for p in build_people(
-        [row("talent@angel.co"), row("nadia@secondco.io")], ME, {},
-        contacted={"nadia@secondco.io"}, automated={"talent@angel.co"})}
-    assert people["talent@angel.co"].is_service is True
+        [row("talent@jobs.example.com"), row("nadia@secondco.io")], ME, {},
+        contacted={"nadia@secondco.io"}, automated={"talent@jobs.example.com"})}
+    assert people["talent@jobs.example.com"].is_service is True
     assert people["nadia@secondco.io"].is_service is False
 
 
 def test_services_still_appear_in_the_roster():
     """They belong in the data. It is the leaderboard they do not belong in —
-    there is nobody at talent@angel.co to thank."""
-    people = build_people([row("talent@angel.co")], ME, {},
-                          contacted=set(), automated={"talent@angel.co"})
-    assert any(p.address == "talent@angel.co" for p in people)
+    there is nobody at talent@jobs.example.com to thank."""
+    people = build_people([row("talent@jobs.example.com")], ME, {},
+                          contacted=set(), automated={"talent@jobs.example.com"})
+    assert any(p.address == "talent@jobs.example.com" for p in people)
 
 
 def test_classification_defaults_to_person_when_nothing_is_known():
     """Called without the evidence arguments, nobody is called a machine."""
-    people = build_people([row("talent@angel.co")], ME, {})
+    people = build_people([row("talent@jobs.example.com")], ME, {})
     assert people[0].is_service is False

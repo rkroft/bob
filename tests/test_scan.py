@@ -230,12 +230,12 @@ def test_scan_records_who_the_principal_wrote_to():
 
 def test_scan_records_senders_whose_mail_is_machine_generated():
     t = Thread(id="y", messages=[Message(
-        id="m1", from_addr="talent@angel.co", to_addrs=[ALICE], subject="Match",
+        id="m1", from_addr="talent@jobs.example.com", to_addrs=[ALICE], subject="Match",
         body_text="New match", date=datetime(2026, 3, 1), is_bulk=True)])
     contacted, automated = set(), set()
     scan(FakeSource([t], ALICE), contacted_out=contacted, automated_out=automated)
-    assert "talent@angel.co" in automated
-    assert "talent@angel.co" not in contacted
+    assert "talent@jobs.example.com" in automated
+    assert "talent@jobs.example.com" not in contacted
 
 
 def test_no_limit_means_exhaustive_and_nothing_is_reported_as_capped():
