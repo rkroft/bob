@@ -41,16 +41,49 @@ def gmail_link(thread_id: str) -> str:
     return f"https://mail.google.com/mail/u/0/#all/{thread_id}"
 
 
+def _addresses(raw: str | None) -> list[str]:
+    """`--principal` as a list. The plugin's own config field describes it as
+    comma-separated, so the CLI has to accept that shape even though Bob reads
+    one mailbox at a time."""
+    return [a.strip().lower() for a in (raw or "").split(",") if a.strip()]
+
+
 def build_source(args):
     """Returns (source, link_for). Imports GmailSource lazily so the mbox path
-    never needs Google credentials on the machine."""
+    never needs Google credentials on the machine.
+
+    Bob reads ONE mailbox per run. Where a second address is supplied it is
+    reported and ignored rather than silently dropped: the plugin advertises
+    `principal` as comma-separated, so a user who lists two has every reason
+    to believe both were read. Saying so is the difference between a limit
+    and a wrong answer.
+    """
+    given = _addresses(args.principal)
+
     if args.mbox:
-        if not args.principal:
+        if not given:
             raise SystemExit("--principal is required with --mbox")
-        return MboxSource(args.mbox, principal=args.principal), None
+        if len(given) > 1:
+            print(f"reading as {given[0]} — Bob reads one mailbox at a time, "
+                  f"so {', '.join(given[1:])} "
+                  f"{'is' if len(given) == 2 else 'are'} not read by this run.")
+        return MboxSource(args.mbox, principal=given[0]), None
+
     if args.gmail:
         from gmail_source import GmailSource
-        return GmailSource(), gmail_link
+        source = GmailSource()
+        # The token decides whose mailbox this is; --principal cannot override
+        # it. Previously it was accepted here and discarded without a word.
+        whose = source.principal()
+        others = [a for a in given if a != whose]
+        if others:
+            print(f"reading {whose} — the mailbox this token belongs to. "
+                  f"{', '.join(others)} "
+                  f"{'is' if len(others) == 1 else 'are'} not read by this "
+                  f"run; a second mailbox needs its own token "
+                  f"(BOB_GOOGLE_TOKEN) and its own output files.")
+        return source, gmail_link
+
     raise SystemExit("need --mbox PATH or --gmail")
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -403,3 +404,96 @@ def test_roster_without_a_scan_says_what_to_run(tmp_path, capsys):
                    "--principal", ME, "--people", str(tmp_path / "none.csv")])
     assert rc == 1
     assert "bob scan" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# One mailbox per run, said out loud
+#
+# `/bob-scan` passes --principal on the --gmail path, where the token decides
+# whose mailbox it is. That argument used to be accepted and discarded without
+# a word, while the plugin's config field described it as comma-separated --
+# so a user listing two addresses had every reason to think both were read.
+# --------------------------------------------------------------------------
+
+def test_a_second_address_is_reported_not_silently_dropped(capsys):
+    """The mbox path: first address wins, the rest are named as unread."""
+    from bob import build_source
+
+    class Args:
+        mbox = str(Path(__file__).parent / "fixtures")
+        gmail = False
+        principal = "alice.tran@examplecorp.com, dana.okafor@example.com"
+
+    try:
+        build_source(Args())
+    except (SystemExit, FileNotFoundError):
+        pass  # no fixture mbox here; the message before it is what matters
+    out = capsys.readouterr().out
+    assert "alice.tran@examplecorp.com" in out
+    assert "dana.okafor@example.com" in out
+    assert "one mailbox at a time" in out
+
+
+def test_the_gmail_token_decides_and_says_so(capsys):
+    """The Gmail path: the token's account is authoritative, and an address
+    that is not it is reported as unread rather than ignored."""
+    import bob as bob_mod
+
+    class FakeGmail:
+        def principal(self):
+            return "alice.tran@examplecorp.com"
+
+    class Args:
+        mbox = None
+        gmail = True
+        principal = "alice.tran@examplecorp.com,dana.okafor@example.com"
+
+    fake_mod = types.ModuleType("gmail_source")
+    fake_mod.GmailSource = FakeGmail
+    # Save and restore rather than delete: gmail_source may already be
+    # imported, and dropping it breaks whatever imports it next.
+    saved = sys.modules.get("gmail_source")
+    sys.modules["gmail_source"] = fake_mod
+    try:
+        source, link = bob_mod.build_source(Args())
+    finally:
+        if saved is not None:
+            sys.modules["gmail_source"] = saved
+        else:
+            sys.modules.pop("gmail_source", None)
+
+    out = capsys.readouterr().out
+    assert source.principal() == "alice.tran@examplecorp.com"
+    assert "dana.okafor@example.com" in out
+    assert "not read by this run" in out
+    assert "BOB_GOOGLE_TOKEN" in out
+
+
+def test_the_only_address_produces_no_noise(capsys):
+    """One address is the normal case and must say nothing extra."""
+    import bob as bob_mod
+
+    class FakeGmail:
+        def principal(self):
+            return "alice.tran@examplecorp.com"
+
+    class Args:
+        mbox = None
+        gmail = True
+        principal = "alice.tran@examplecorp.com"
+
+    fake_mod = types.ModuleType("gmail_source")
+    fake_mod.GmailSource = FakeGmail
+    # Save and restore rather than delete: gmail_source may already be
+    # imported, and dropping it breaks whatever imports it next.
+    saved = sys.modules.get("gmail_source")
+    sys.modules["gmail_source"] = fake_mod
+    try:
+        bob_mod.build_source(Args())
+    finally:
+        if saved is not None:
+            sys.modules["gmail_source"] = saved
+        else:
+            sys.modules.pop("gmail_source", None)
+
+    assert "not read by this run" not in capsys.readouterr().out

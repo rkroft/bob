@@ -17,8 +17,8 @@
     },
     "principal": {
       "type": "string",
-      "title": "Your email addresses",
-      "description": "The mailboxes that are yours, comma-separated. Bob uses these to tell an intro made FOR you from one you made.",
+      "title": "Your email address",
+      "description": "The mailbox Bob reads. Bob uses it to tell an intro made FOR you from one you made. Bob reads one mailbox per run — list a second address and it will say so rather than quietly skip it. On the Gmail path the token decides, and this is checked against it.",
       "required": true
     }
   }
