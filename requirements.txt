@@ -1,0 +1,5 @@
+# Only needed for `bob scan --gmail` / `bob roster --gmail`.
+# The --mbox path is standard library only.
+google-api-python-client
+google-auth
+google-auth-oauthlib

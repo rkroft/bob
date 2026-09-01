@@ -1,0 +1,15 @@
+{
+  "name": "bob",
+  "owner": {
+    "name": "Rachel Kroft"
+  },
+  "plugins": [
+    {
+      "name": "bob",
+      "source": "./",
+      "description": "Scan your mail, see who connected you to whom, and thank the people who did it.",
+      "version": "0.1.0"
+    }
+  ],
+  "description": "Bob \u2014 see who connected you to whom, and thank the people who did it."
+}

@@ -1,0 +1,357 @@
+<title>Bob, Answered</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,600&family=Nunito:wght@400;600;700&display=swap">
+<style>
+  :root {
+    --paper:      #fdf6ee;
+    --paper-sunk: #f7ead9;
+    --ink:        #2f2422;
+    --ink-soft:   #6b5651;
+    --muted:      #7a6157;
+    --rule:       #e9d8cb;
+    --coral:      #d65b3c;
+    --coral-soft: #b24a2b;
+    --shade:      #fbeee4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #241c1a;
+      --paper-sunk: #2f2422;
+      --ink:        #f3e3d8;
+      --ink-soft:   #d3bcae;
+      --muted:      #bfa697;
+      --rule:       #43332e;
+      --coral:      #ee7b5c;
+      --coral-soft: #ffb98a;
+      --shade:      #2c2220;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #241c1a;
+    --paper-sunk: #2f2422;
+    --ink:        #f3e3d8;
+    --ink-soft:   #d3bcae;
+    --muted:      #bfa697;
+    --rule:       #43332e;
+    --coral:      #ee7b5c;
+    --coral-soft: #ffb98a;
+    --shade:      #2c2220;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px 96px; }
+
+  /* ---------- masthead ---------- */
+  .mast { padding: 72px 0 40px; border-bottom: 1px solid var(--rule); }
+  .wordmark {
+    font-family: 'Fraunces', Georgia, serif;
+    font-style: italic; font-weight: 600;
+    font-size: 44px; line-height: 1; color: var(--coral);
+    letter-spacing: -0.015em; margin: 0 0 22px;
+  }
+  .mast h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.16; letter-spacing: -0.018em;
+    margin: 0 0 18px; max-width: 20ch; text-wrap: balance;
+  }
+  .standfirst { font-size: 19px; color: var(--ink-soft); max-width: 60ch; margin: 0; }
+
+  .status {
+    margin-top: 30px; padding: 18px 22px;
+    background: var(--shade); border-left: 3px solid var(--coral);
+    max-width: 62ch;
+  }
+  .status p { margin: 0; font-size: 15.5px; color: var(--ink-soft); }
+  .status strong { color: var(--ink); }
+
+  /* ---------- two-column shell ---------- */
+  .shell { display: grid; grid-template-columns: 200px 1fr; gap: 64px; padding-top: 48px; }
+  @media (max-width: 860px) { .shell { grid-template-columns: 1fr; gap: 0; padding-top: 34px; } }
+
+  .index { position: sticky; top: 28px; align-self: start; }
+  @media (max-width: 860px) { .index { position: static; margin-bottom: 40px; } }
+  .index p {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.13em;
+    color: var(--muted); font-weight: 700; margin: 0 0 14px;
+  }
+  .index ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .index a {
+    color: var(--ink-soft); text-decoration: none; font-size: 15px;
+    border-bottom: 1px solid transparent; padding-bottom: 1px;
+  }
+  .index a:hover, .index a:focus-visible { color: var(--coral-soft); border-bottom-color: var(--coral-soft); }
+
+  .col { min-width: 0; max-width: 66ch; }
+
+  /* ---------- sections ---------- */
+  section { padding-top: 8px; }
+  section + section { margin-top: 60px; }
+  .eyebrow {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--coral-soft); font-weight: 700; margin: 0 0 8px;
+  }
+  section > h2 {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 600;
+    font-size: 27px; letter-spacing: -0.012em; margin: 0 0 6px; text-wrap: balance;
+  }
+  .lede { color: var(--muted); font-size: 15.5px; margin: 0 0 4px; max-width: 56ch; }
+
+  .qa { border-top: 1px solid var(--rule); margin-top: 26px; padding-top: 24px; }
+  .qa + .qa { margin-top: 26px; }
+  .qa h3 {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 600;
+    font-size: 19.5px; line-height: 1.34; margin: 0 0 10px;
+    letter-spacing: -0.008em; text-wrap: balance;
+  }
+  .qa p { margin: 0 0 12px; }
+  .qa p:last-child { margin-bottom: 0; }
+  .qa ul { margin: 0 0 12px; padding-left: 20px; }
+  .qa li { margin-bottom: 7px; }
+  .qa li:last-child { margin-bottom: 0; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+  code {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 0.87em; background: var(--shade);
+    padding: 1px 5px; border-radius: 2px; color: var(--coral-soft);
+  }
+
+  /* ---------- surfaces table ---------- */
+  .tablewrap { overflow-x: auto; margin: 4px 0 12px; }
+  table { border-collapse: collapse; width: 100%; min-width: 420px; font-size: 15.5px; }
+  th, td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted); font-weight: 700;
+  }
+  td.yes { color: var(--coral-soft); font-weight: 700; white-space: nowrap; }
+  td.no { color: var(--muted); white-space: nowrap; }
+
+  /* ---------- closing note ---------- */
+  .closing {
+    margin-top: 72px; padding-top: 30px; border-top: 2px solid var(--coral);
+    max-width: 66ch;
+  }
+  .closing h2 {
+    font-family: 'Fraunces', Georgia, serif; font-style: italic; font-weight: 600;
+    font-size: 24px; margin: 0 0 12px;
+  }
+  .closing p { margin: 0 0 12px; color: var(--ink-soft); }
+  .closing p:last-child { margin: 0; }
+
+  a { color: var(--coral-soft); }
+  a:focus-visible, .index a:focus-visible { outline: 2px solid var(--coral); outline-offset: 3px; }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="wordmark">bob.</div>
+    <h1>Everything you'd want to ask before trying it</h1>
+    <p class="standfirst">Bob reads your mail, works out who introduced you to whom, and helps you thank them. Here's what that means in practice, including what it can't do.</p>
+    <div class="status">
+      <p><strong>Where this is:</strong> early. Bob works, and it has been run against a real six-year mailbox — but it is not publicly released, and the first people outside its author are only just installing it. Expect rough edges, and expect to be asked what broke.</p>
+    </div>
+  </header>
+
+  <div class="shell">
+
+    <nav class="index">
+      <p>Contents</p>
+      <ol>
+        <li><a href="#basics">The basics</a></li>
+        <li><a href="#setup">Getting set up</a></li>
+        <li><a href="#does">What it does</a></li>
+        <li><a href="#cant">What it can't do</a></li>
+        <li><a href="#data">Your data</a></li>
+      </ol>
+    </nav>
+
+    <main class="col">
+
+      <section id="basics">
+        <p class="eyebrow">One</p>
+        <h2>The basics</h2>
+        <p class="lede">What Bob is, and whether it's for you.</p>
+
+        <div class="qa">
+          <h3>What is Bob?</h3>
+          <p>A tool that finds every introduction sitting in your mailbox, shows you who has actually connected you to people over the years, and helps you write back to them.</p>
+          <p>There is no data entry. You don't add contacts, tag anyone, or import a spreadsheet. The introductions are already in your email — Bob just reads them out.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Who is it for?</h3>
+          <p>People whose network is part of their work and who make or receive a lot of introductions. Investors, recruiters, community builders, anyone who has spent years connecting people and has never once seen the shape of it.</p>
+        </div>
+
+        <div class="qa">
+          <h3>What does it cost?</h3>
+          <p>Bob itself is free and open source. You need a paid Claude plan that includes Claude Code, which is how Bob is installed and run. There is no Bob subscription, no account to make, and nothing to pay its author.</p>
+        </div>
+
+        <div class="qa">
+          <h3>How do I get it?</h3>
+          <p>Ask. Bob is not publicly listed yet, so access is by request while the first handful of people try it. That is deliberate — it's easier to fix what breaks when you know who it broke for.</p>
+        </div>
+      </section>
+
+      <section id="setup">
+        <p class="eyebrow">Two</p>
+        <h2>Getting set up</h2>
+        <p class="lede">The honest version, including the part that takes real effort.</p>
+
+        <div class="qa">
+          <h3>Where does Bob run?</h3>
+          <p>On your own computer, inside Claude Code. Two doors:</p>
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr><th>Where</th><th>Works?</th><th>Notes</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Claude desktop app, Code tab</td><td class="yes">Yes</td><td>No terminal needed. Click <strong>+</strong>, then Plugins, then Bob.</td></tr>
+                <tr><td>Claude Code in a terminal</td><td class="yes">Yes</td><td>If you'd rather.</td></tr>
+                <tr><td>Cowork</td><td class="no">Not yet</td><td>Being looked at.</td></tr>
+                <tr><td>Claude chat, on the web</td><td class="no">No</td><td>Runs on Anthropic's servers. Bob runs on yours.</td></tr>
+                <tr><td>ChatGPT</td><td class="no">No</td><td>Different plugin format.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="qa">
+          <h3>Do I need to be technical?</h3>
+          <p>Installing Bob doesn't require a terminal. One step in setting it up does feel like developer work, and it's fair to know that before you start: if you want Bob to read Gmail directly, you make your own Google credential for it. That takes about ten minutes, once, and it's free.</p>
+          <p>It's your credential rather than Bob's on purpose. There is no shared application in the middle, which is what makes it true that nobody but you can reach your mail.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Is there a way to skip the Google step?</h3>
+          <p>Yes. Export your mail from Google Takeout and point Bob at the file. No credentials, no packages, nothing to configure. It's the path that works this afternoon — the tradeoff is that a full mail export can take a while to arrive and is a large download.</p>
+        </div>
+
+        <div class="qa">
+          <h3>How long does the first run take?</h3>
+          <p>About twenty minutes for six years of mail, and most of that is waiting. You get the whole thing in one go: Bob reads, builds the table, draws the page, and opens it.</p>
+        </div>
+      </section>
+
+      <section id="does">
+        <p class="eyebrow">Three</p>
+        <h2>What it does</h2>
+        <p class="lede">What you actually get on the other side of setup.</p>
+
+        <div class="qa">
+          <h3>What do I see first?</h3>
+          <p>A page of your own network: every introduction Bob found, who made it, when, and a link back to the original thread for each one so you can check any row rather than take its word.</p>
+          <p>Usually there's a surprise in it. Most people are wrong about who their top connectors are.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Does it cover introductions I made, or only ones made for me?</h3>
+          <p>Both. Bob knows which seat you were sitting in, so an introduction you made is kept apart from one made for you, and it can tell you whether each one took hold — whether both people replied, whether anyone booked time.</p>
+        </div>
+
+        <div class="qa">
+          <h3>What are the chains?</h3>
+          <p>The thing you can't see from an inbox. Someone introduces you to one person, and that person goes on to introduce you to nine more. Bob follows that, so an introduction is measured by what it produced rather than by the fact it happened.</p>
+          <p>It reads the other way too. <em>You know Terry because Jen introduced you to Levi, Levi introduced you to Eve, and Eve introduced you to Terry.</em></p>
+        </div>
+
+        <div class="qa">
+          <h3>Does it write the thank-yous?</h3>
+          <p>It asks what came of the introductions that took hold, a sentence each or skip, and then drafts the emails. Your sentence is the copy — Bob isn't paraphrasing a form field, it's using what you said.</p>
+          <p>It also finds the introductions that never landed, which is often the more useful list. A warm introduction going to waste is a door still open.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Will it send anything on my behalf?</h3>
+          <p>No. Drafts land in your Gmail drafts and stay there. Nothing leaves without you sending it, and the credential Bob uses to read your mail cannot send at all.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Does it work with Airtable?</h3>
+          <p>Yes, if you want it to. Bob can mirror what it found into your own Airtable base — one table of introductions, one of people. It's one-way and additive: re-running never duplicates rows and it never deletes anything. Bob doesn't hold your Airtable login; it goes through the connection already on your account.</p>
+        </div>
+      </section>
+
+      <section id="cant">
+        <p class="eyebrow">Four</p>
+        <h2>What it can't do</h2>
+        <p class="lede">Worth reading before you decide. Some of these are choices, and some are walls.</p>
+
+        <div class="qa">
+          <h3>Can it tell me what came of an introduction I made?</h3>
+          <p>No, and this is the real limit. Once you hand two people off to each other, they talk to each other and not to you. Your mailbox stops being evidence at that moment.</p>
+          <p>Knowing what became of it would mean going and asking them, which is a different feature with its own questions attached. It isn't built.</p>
+        </div>
+
+        <div class="qa">
+          <h3>It only sees one channel.</h3>
+          <p>Bob reads email. An introduction can land perfectly well over text, LinkedIn, or a phone call, and Bob will never know. So it says <em>"I don't see a reply — did it go somewhere else?"</em> rather than telling you that you never replied. If it's wrong, correct it and it won't ask again.</p>
+        </div>
+
+        <div class="qa">
+          <h3>It can't see introductions you weren't part of.</h3>
+          <p>The chains only follow where every step touched your own mailbox. If someone you know introduced two other people to each other, that happened somewhere Bob cannot see. This is a picture of your network compounding, not a map of everyone's.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Can my whole firm use it?</h3>
+          <p>Not as one shared thing. Bob is built for one person and one mailbox, so everyone would run their own. A firm-level view where partners see each other's introductions is a genuinely interesting problem and an honest amount of work. It isn't around the corner.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Does it use LinkedIn?</h3>
+          <p>No, and it won't. Automated LinkedIn access risks your account, and that's not a risk worth handing to anyone's tool.</p>
+        </div>
+      </section>
+
+      <section id="data">
+        <p class="eyebrow">Five</p>
+        <h2>Your data</h2>
+        <p class="lede">Short version: it stays on your computer.</p>
+
+        <div class="qa">
+          <h3>Where does everything live?</h3>
+          <p>In a folder you pick, on your own machine. A couple of spreadsheet files and a web page. You can open them, edit them, back them up, or delete the folder and be done.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Can Bob's author see any of it?</h3>
+          <p>No — and not as a policy you have to trust. There is no Bob server, no account, and no mechanism by which your data could reach anyone. She holds no credential of yours because none exists to hold.</p>
+        </div>
+
+        <div class="qa">
+          <h3>What exactly can it read?</h3>
+          <p>Your mail, read-only, using a credential you create and store yourself. It can't send, can't delete, and can't touch anything in your account that isn't mail. If you use the export route instead, it reads a file and asks for nothing at all.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Does the network page phone home?</h3>
+          <p>It makes no network requests of any kind. It's a file on your disk opened in your browser. There is nothing to share unless you choose to share it.</p>
+        </div>
+
+        <div class="qa">
+          <h3>What if I put it in Airtable?</h3>
+          <p>Then it leaves your laptop, and Bob will say so out loud before it does — once, at the moment you decide, rather than buried in a document you'd never read.</p>
+        </div>
+      </section>
+
+      <div class="closing">
+        <h2>One last thing</h2>
+        <p>Bob will tell you when it doesn't know something. A blank field means it didn't look, never that nothing happened, and it won't sort your introductions into buckets it can't actually see.</p>
+        <p>Doing nothing is also a finished outcome. If you run it once, look at the page, and never open it again, that's fine — the page is yours and it will still be there.</p>
+      </div>
+
+    </main>
+  </div>
+</div>

@@ -1,0 +1,40 @@
+# secrets
+.env
+.env.*
+*.pem
+*credentials*.json
+*token*.json
+
+# environments
+.venv/
+.venv
+venv/
+__pycache__/
+node_modules/
+
+# generated output that may contain real people — never commit
+reports/
+reports
+intros.csv
+people.csv
+network.html
+*.mbox
+Takeout/
+*_report.md
+*_worklist.json
+*_index.json
+Connections.csv
+data/
+dumps/
+
+# os
+.DS_Store
+
+# test/tool caches — keep them out of the Obsidian file tree
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+⚠️ SYNC-CONFLICT.md
+
+# subagent-driven-development scratch
+.superpowers/

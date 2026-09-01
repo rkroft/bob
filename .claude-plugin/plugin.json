@@ -1,0 +1,25 @@
+{
+  "name": "bob",
+  "displayName": "Bob",
+  "version": "0.1.0",
+  "description": "Scan your mail, see who connected you to whom, and thank the people who did it.",
+  "author": { "name": "Rachel Kroft" },
+  "repository": "https://github.com/rkroft/bob",
+  "license": "MIT",
+  "keywords": ["network", "introductions", "crm", "email", "graph"],
+  "userConfig": {
+    "data_dir": {
+      "type": "directory",
+      "title": "Your Bob folder",
+      "description": "Where your network lives. Bob writes intros.csv, people.csv and network.html here. Never inside the plugin — plugin updates replace the plugin directory.",
+      "required": true,
+      "default": "~/bob-network"
+    },
+    "principal": {
+      "type": "string",
+      "title": "Your email addresses",
+      "description": "The mailboxes that are yours, comma-separated. Bob uses these to tell an intro made FOR you from one you made.",
+      "required": true
+    }
+  }
+}
