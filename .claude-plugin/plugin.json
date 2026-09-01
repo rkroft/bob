@@ -1,7 +1,7 @@
 {
   "name": "bob",
   "displayName": "Bob",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Scan your mail, see who connected you to whom, and thank the people who did it.",
   "author": { "name": "Rachel Kroft" },
   "repository": "https://github.com/rkroft/bob",
