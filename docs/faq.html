@@ -123,6 +123,16 @@
     padding: 1px 5px; border-radius: 2px; color: var(--coral-soft);
   }
 
+  pre {
+    background: var(--shade); border-radius: 4px;
+    padding: 12px 14px; margin: 4px 0 12px;
+    overflow-x: auto; line-height: 1.55;
+  }
+  pre code {
+    background: none; padding: 0; border-radius: 0;
+    font-size: 14px; color: inherit; white-space: pre;
+  }
+
   /* ---------- surfaces table ---------- */
   .tablewrap { overflow-x: auto; margin: 4px 0 12px; }
   table { border-collapse: collapse; width: 100%; min-width: 420px; font-size: 15.5px; }
@@ -157,7 +167,7 @@
     <h1>Everything you'd want to ask before trying it</h1>
     <p class="standfirst">Bob reads your mail, works out who introduced you to whom, and helps you thank them. Here's what that means in practice, including what it can't do.</p>
     <div class="status">
-      <p><strong>Where this is:</strong> early. Bob works, and it has been run against a real six-year mailbox — but it is not publicly released, and the first people outside its author are only just installing it. Expect rough edges, and expect to be asked what broke.</p>
+      <p><strong>Where this is:</strong> early. Bob works, and it has been run against a real six-year mailbox. It is now public and anyone can install it, but the first people outside its author are only just doing so. Expect rough edges, and expect to be asked what broke.</p>
     </div>
   </header>
 
@@ -199,7 +209,11 @@
 
         <div class="qa">
           <h3>How do I get it?</h3>
-          <p>Ask. Bob is not publicly listed yet, so access is by request while the first handful of people try it. That is deliberate — it's easier to fix what breaks when you know who it broke for.</p>
+          <p>Two lines in Claude Code:</p>
+          <pre><code>/plugin marketplace add rkroft/bob
+/plugin install bob@bob</code></pre>
+          <p>Then <code>/bob-setup</code>, which walks you through the rest. The source is at <a href="https://github.com/rkroft/bob">github.com/rkroft/bob</a> — MIT licensed, and worth a look before you give any tool access to your mail.</p>
+          <p>Bob is early. The install works and the scan runs; the follow-up loop and the impact view are still being built.</p>
         </div>
       </section>
 
