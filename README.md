@@ -7,6 +7,8 @@ It is a [Claude Code](https://claude.com/claude-code) plugin. Everything runs
 on your machine. Bob has no server, no account, and no database — your
 network lives in two CSV files in a folder you choose.
 
+**What it does, in full:** https://rkroft.github.io/bob/
+
 ```
 /plugin marketplace add rkroft/bob
 /plugin install bob@bob
@@ -50,7 +52,7 @@ name at setup. Bob's Python holds no credential but the Gmail token you
 create yourself, and talks to no service but Gmail. The `/bob-table` command
 is the one exception and it says so before it runs.
 
-The [FAQ](docs/faq.html) covers this properly, including the Google consent
+The [FAQ](https://rkroft.github.io/bob/faq.html) covers this properly, including the Google consent
 screen you will see and why it says what it says.
 
 ## Running it

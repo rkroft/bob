@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from graph_model import build_graph  # noqa: E402
 from intro_store import read_intros, write_intros  # noqa: E402
-from mail_source import best_name  # noqa: E402
+from mail_source import best_name, normalize_addr  # noqa: E402
 from last_contact import last_direct_contact  # noqa: E402
 from people_store import build_people, read_people, write_people  # noqa: E402
 from mbox_source import MboxSource  # noqa: E402
@@ -32,6 +32,9 @@ from render import render  # noqa: E402
 from intro_detect import search_queries  # noqa: E402
 from scan import scan, scan_threads  # noqa: E402
 from connector_source import ConnectorSource  # noqa: E402
+from name_store import (  # noqa: E402
+    Name, as_lookup, extract_quoted_names, merge, read_names, worklist,
+    write_names)
 
 DEFAULT_OUT = ROOT / "reports" / "intros.csv"
 DEFAULT_HTML = ROOT / "reports" / "network.html"
@@ -109,6 +112,122 @@ def _announce(n: int) -> None:
           f"{max(1, round(n / 170))} min", flush=True)
 
 
+def cmd_names_extract(args) -> int:
+    """Pull names out of thread bodies the agent fetched, into names.csv.
+
+    Deterministic and local — no judgment is spent here. The names come from
+    the attribution a mail client writes when quoting a reply, which pairs a
+    real display name with a real address (`name_store.extract_quoted_names`).
+    That is the best source available once the connector has stripped the
+    headers, and it is a parse rather than an inference.
+
+    Input is the same JSONL shape the scan reads, plus `plaintextBody` on each
+    message. Threads with no body contribute nothing and are counted, not
+    skipped silently: a fetch that returned metadata only would otherwise look
+    exactly like a mailbox with no names in it.
+    """
+    from connector_source import read_jsonl
+    found: list = []
+    threads = bodies = 0
+    for obj in read_jsonl(Path(args.bodies)):
+        threads += 1
+        tid = obj.get("id", "")
+        for m in (obj.get("messages") or []):
+            body = m.get("plaintextBody") or ""
+            if not body:
+                continue
+            bodies += 1
+            for n in extract_quoted_names(body):
+                found.append(Name(n.address, n.name, n.evidence, tid))
+
+    path = Path(args.names)
+    known = read_names(path)
+    after = merge(known, found)
+    write_names(after, path)
+    print(f"{threads} threads · {bodies} messages with a body · "
+          f"{len(found)} attributions seen")
+    print(f"{len(after) - len(known)} new names · {len(after)} known in total")
+    if threads and not bodies:
+        print("no bodies present — was this fetched with messageFormat PLAIN_TEXT?")
+    print(f"wrote {path}")
+    return 0
+
+
+def cmd_names_add(args) -> int:
+    """Merge extracted names into names.csv. JSON on stdin or in a file.
+
+    A CLI rather than the agent editing the CSV by hand, so every write goes
+    through `merge` and inherits its rules — precedence, plausibility, and
+    first-writer-holds. An agent hand-editing the file would silently bypass
+    all three, and the failure would look like a name that changes between
+    runs for no visible reason.
+
+    Reports what it rejected. Silence about a dropped name would leave the
+    agent believing a lookup succeeded when nothing was stored.
+    """
+    import json
+    raw = (Path(args.json).read_text(encoding="utf-8")
+           if args.json else sys.stdin.read())
+    try:
+        items = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"could not read the name list as JSON: {e}")
+    if isinstance(items, dict):
+        items = [items]
+
+    path = Path(args.names)
+    known = read_names(path)
+    incoming = [Name(address=i.get("address", ""), name=i.get("name", ""),
+                     evidence=(i.get("evidence") or "").strip(),
+                     thread_id=i.get("thread_id", "")) for i in items]
+    after = merge(known, incoming)
+    write_names(after, path)
+
+    added = len(after) - len(known)
+    changed = sum(1 for a, n in after.items()
+                  if a in known and known[a].name != n.name)
+    rejected = [i.name or i.address for i in incoming
+                if i.address and normalize_addr(i.address) not in after]
+    # Rejected is its own number, never folded into "no change". A caller
+    # told 2 unchanged when 2 were thrown away would believe the lookup
+    # landed -- the same silent-success failure this file exists to avoid.
+    kept = len(incoming) - len(rejected)
+    print(f"{len(incoming)} offered · {added} new · {changed} upgraded · "
+          f"{max(0, kept - added - changed)} already known · "
+          f"{len(rejected)} rejected")
+    if rejected:
+        print(f"rejected: {', '.join(sorted(set(rejected))[:5])}"
+              f"{' …' if len(set(rejected)) > 5 else ''}")
+    print(f"wrote {path} ({len(after)} names)")
+    return 0
+
+
+def cmd_names_todo(args) -> int:
+    """Print who still needs a name, and where to look for it.
+
+    The connector strips display names (HAP-318), so on that path every person
+    is labelled by address until this pass runs. Bob's Python cannot fetch the
+    bodies itself — the connector belongs to the agent — so this emits the
+    worklist and the agent does the reading. Deliberately narrow: confirmed
+    introductions only, and only threads the person is actually on.
+    """
+    import json
+    rows = read_intros(Path(args.intros))
+    known = read_names(Path(args.names)) if args.names else {}
+    addresses = {r.introducer for r in rows} | {p for r in rows for p in r.introduced}
+    addresses.discard("")
+    todo = worklist(addresses, known, rows, exclude=_addresses(args.principal))
+    if args.limit:
+        todo = todo[:args.limit]
+    print(json.dumps(
+        {"needed": len(todo),
+         "known": len(known),
+         "total_people": len(addresses),
+         "work": [{"address": a, "threads": t[:3]} for a, t in todo]},
+        indent=2))
+    return 0
+
+
 def cmd_scan(args) -> int:
     source, link_for = build_source(args)
     seen_names: dict = {}
@@ -130,6 +249,11 @@ def cmd_scan(args) -> int:
                     contacted_out=contacted, automated_out=automated,
                     progress=_announce)
     names = {a: best_name(v) for a, v in seen_names.items()}
+    # A header name is the person's own spelling, so it outranks anything the
+    # name pass recovered from prose. Overlay first, then let headers win.
+    if args.names:
+        found = as_lookup(read_names(Path(args.names)))
+        names = {**found, **{a: n for a, n in names.items() if n}}
 
     out = Path(args.out)
     write_intros(rows, out)
@@ -327,6 +451,8 @@ def main(argv=None) -> int:
     s.add_argument("--gmail", action="store_true", help="use the Gmail source")
     s.add_argument("--connector", type=Path, nargs="+", metavar="FILE",
                    help="JSONL written by the agent from the Gmail connector")
+    s.add_argument("--names", type=Path,
+                   help="names.csv from a name pass (see `bob names-todo`)")
     s.add_argument("--principal", help="the mailbox owner's address")
     s.add_argument("--out", type=Path, default=DEFAULT_OUT)
     s.add_argument("--people", type=Path, default=DEFAULT_PEOPLE)
@@ -353,6 +479,31 @@ def main(argv=None) -> int:
     g.add_argument("--out", type=Path, default=DEFAULT_HTML)
     g.add_argument("--people", type=Path, default=DEFAULT_PEOPLE)
     g.set_defaults(fn=cmd_graph)
+
+    n = sub.add_parser("names-todo",
+                       help="who still needs a name, and which threads to read")
+    n.add_argument("--intros", type=Path, default=DEFAULT_OUT)
+    n.add_argument("--names", type=Path,
+                   help="existing names.csv, so known people are skipped")
+    n.add_argument("--principal",
+                   help="your address — you are on every row and need no lookup")
+    n.add_argument("--limit", type=int,
+                   help="cap the worklist; it is ordered best-evidenced first")
+    n.set_defaults(fn=cmd_names_todo)
+
+    na = sub.add_parser("names-add", help="merge extracted names into names.csv")
+    na.add_argument("--names", type=Path, required=True)
+    na.add_argument("--json", type=Path,
+                    help="file of [{address,name,evidence,thread_id}]; "
+                         "omit to read stdin")
+    na.set_defaults(fn=cmd_names_add)
+
+    ne = sub.add_parser("names-extract",
+                        help="parse names out of fetched thread bodies")
+    ne.add_argument("--bodies", type=Path, required=True,
+                    help="JSONL of threads fetched with messageFormat PLAIN_TEXT")
+    ne.add_argument("--names", type=Path, required=True)
+    ne.set_defaults(fn=cmd_names_extract)
 
     args = ap.parse_args(argv)
     return args.fn(args)

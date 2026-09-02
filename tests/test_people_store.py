@@ -136,3 +136,23 @@ def test_a_person_with_no_recorded_contact_says_so_rather_than_guessing(tmp_path
     p = tmp_path / "people.csv"
     write_people([Person("dana@example.com", "Dana")], p)
     assert read_people(p)[0].last_contact == ""
+
+
+def test_role_address_is_not_given_an_invented_name():
+    """`hello@` must not become a person called "Hello".
+
+    Found on the connector path, where no header names exist at all, so this
+    fallback is the only labelling mechanism and a role address reached the
+    leaderboard as someone who had made introductions (HAP-319).
+    """
+    from people_store import name_from_address
+    assert name_from_address("hello@examplecorp.com") == "hello@examplecorp.com"
+    assert name_from_address("info@examplecorp.com") == "info@examplecorp.com"
+    assert name_from_address("NoReply@examplecorp.com") == "NoReply@examplecorp.com"
+
+
+def test_a_real_person_still_gets_a_readable_fallback():
+    """The guard must not cost the ordinary case it exists to serve."""
+    from people_store import name_from_address
+    assert name_from_address("dana.okafor@example.com") == "Dana Okafor"
+    assert name_from_address("ben_mercer@otherco.io") == "Ben Mercer"

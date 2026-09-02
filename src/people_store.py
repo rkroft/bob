@@ -100,8 +100,23 @@ def name_from_address(addr: str) -> str:
     "dana.okafor@example.com" -> "Dana Okafor". Wrong for initials and for
     anyone whose local part is a handle, which is why it is only ever a
     fallback — a real display name always wins.
+
+    **A role address is returned unchanged.** Capitalising `hello@` produces a
+    person called "Hello", who then appears on the leaderboard having made
+    introductions. That is not a cosmetic slip: the leaderboard is the reveal,
+    and a name Bob invented is a wrong answer stated confidently, which §4.5
+    says costs more than no answer at all. Showing the address is the honest
+    output — it says "someone at this address" instead of naming a person who
+    does not exist.
+
+    This guard is separate from `is_service`, deliberately. That decides
+    whether the roster believes there is a person behind an address, and it can
+    be overridden by evidence (having written to them). This decides only
+    whether Bob is willing to make a name up, and nothing overrides it.
     """
     local = addr.partition("@")[0]
+    if local.lower() in _ROLE_LOCAL:
+        return addr
     words = local.replace(".", " ").replace("_", " ").replace("-", " ").split()
     return " ".join(w.capitalize() for w in words) or addr
 
