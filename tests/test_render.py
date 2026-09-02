@@ -468,20 +468,16 @@ def test_the_roster_has_its_own_pane(tmp_path):
     assert 'id="pane-roster"' in _roster_page(tmp_path)
 
 
-def test_a_personal_address_is_never_given_an_employer(tmp_path):
-    """§4.4: the domain is where they emailed from, not where they work, and a
-    personal address carries no affiliation at all. Printing 'gmail.com' in a
-    'where' column states an employer that does not exist."""
+def test_the_roster_does_not_claim_to_know_where_anyone_works(tmp_path):
+    """The 'Where' column was removed after the first real user asked what it
+    was for. It only ever held the email domain, and the page had to apologise
+    for it on every render -- "a domain is where someone emailed from, not
+    where they work now." A column needing a disclaimer under it is not
+    carrying its width. Nothing may reintroduce the claim."""
     page = _roster_page(tmp_path)
-    assert '"where": "gmail.com"' not in page
-    assert "personal address" in page
-
-
-def test_the_page_says_how_many_it_cannot_place(tmp_path):
-    """§4.4: report the gap rather than silently returning a short list.
-    Omitting them makes a partial answer look complete."""
-    page = _roster_page(tmp_path)
-    assert "1 of 3" in page and "personal address" in page
+    assert "<th>Where</th>" not in page
+    assert '"where"' not in page
+    assert "personal address" not in page
 
 
 def test_an_unknown_last_contact_is_not_reported_as_never(tmp_path):
@@ -571,7 +567,7 @@ def _how(rows_in, names, person, principal="alice@examplecorp.com"):
     from datetime import date
     g = build_graph(rows_in, principal, today=date(2026, 8, 20), names=names)
     label_of = {n.id: n.label for n in g.nodes}
-    rows, _ = _roster_rows(g, [Person(person, "Cy Nakamura", 0, 0, ())],
+    rows = _roster_rows(g, [Person(person, "Cy Nakamura", 0, 0, ())],
                            principal, label_of)
     return rows[0]["how"]
 

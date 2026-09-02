@@ -160,7 +160,7 @@ $ring_markup
 </section>
 <section id="pane-roster" class="pane">
   <p class="note">$rosternote</p>
-  <table id="rost"><thead><tr><th>Who</th><th>Where</th>
+  <table id="rost"><thead><tr><th>Who</th>
     <th>How you know them</th><th>Last email</th></tr></thead><tbody></tbody></table>
 </section>
 <section id="pane-table" class="pane">
@@ -183,14 +183,11 @@ $ring_markup
     const tr = document.createElement('tr');
     // textContent everywhere: every one of these is mail-derived text.
     const who = document.createElement('td'); who.textContent = r.name;
-    const where = document.createElement('td');
-    where.textContent = r.where || (r.personal ? 'personal address' : '—');
-    if (!r.where) { where.className = 'dim'; }
     const how = document.createElement('td'); how.textContent = r.how || '—';
     const last = document.createElement('td');
     last.textContent = r.last || '—';       // blank means not known, not never
     if (!r.last) { last.className = 'dim'; }
-    tr.append(who, where, how, last);
+    tr.append(who, how, last);
     rbody.append(tr);
   });
 
@@ -391,17 +388,6 @@ def _json(obj) -> str:
     return json.dumps(obj).replace("<", "\\u003c")
 
 
-# Domains that say nothing about where somebody works. §4.4: a personal address
-# carries no affiliation, and that gets said out loud rather than dressed up --
-# printing "gmail.com" in a Where column states an employer that does not exist.
-PERSONAL_DOMAINS = frozenset({
-    "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com",
-    "yahoo.com", "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com",
-    "protonmail.com", "proton.me", "pm.me", "msn.com", "fastmail.com",
-    "hey.com", "gmx.com", "zoho.com", "comcast.net", "sbcglobal.net",
-})
-
-
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -424,7 +410,7 @@ def _roster_rows(graph, people, principal: str, label_of: dict) -> tuple:
     name is how two different John Smiths become one person. The merge is a
     review list, not an inference.
 
-    Returns (rows, personal_count).
+    Returns the roster rows.
     """
     principal = (principal or "").lower()
     # Who introduced them, and when. `graph.origins` holds the EARLIEST dated
@@ -448,15 +434,10 @@ def _roster_rows(graph, people, principal: str, label_of: dict) -> tuple:
         for c in getattr(graph, "chains", []) or []:
             connector_of.setdefault(c.introduced, c.introducer)
 
-    rows, personal = [], 0
+    rows = []
     for p in people or []:
         if p.address.lower() == principal:
             continue
-        domain = p.address.partition("@")[2].lower()
-        is_personal = domain in PERSONAL_DOMAINS
-        if is_personal:
-            personal += 1
-
         if p.intros_for_you:
             how = "introduced you to %d %s" % (
                 p.intros_for_you, "person" if p.intros_for_you == 1 else "people")
@@ -476,10 +457,6 @@ def _roster_rows(graph, people, principal: str, label_of: dict) -> tuple:
         rows.append({
             "name": p.name or p.address,
             "addr": p.address,
-            # "" rather than the domain for a personal address: the column is
-            # blank because the answer is unknown, not because it is pending.
-            "where": "" if is_personal else domain,
-            "personal": is_personal,
             "how": how,
             # "" means NOT KNOWN. Bob reads one channel and cannot assert
             # absence (§4.6), so the page prints an em dash, never "never".
@@ -490,7 +467,7 @@ def _roster_rows(graph, people, principal: str, label_of: dict) -> tuple:
     # lost touch with" is the question -- and people with no known contact sort
     # LAST rather than masquerading as the stalest of all.
     rows.sort(key=lambda r: (r["last"] == "", r["last"], r["name"].lower()))
-    return rows, personal
+    return rows
 
 
 def render(
@@ -541,17 +518,11 @@ def render(
         "u": r.thread_link if r.thread_link.startswith("https://mail.google.com/") else "",
     } for r in sorted(rows, key=lambda r: r.date, reverse=True)]
 
-    roster, personal_n = _roster_rows(graph, people, principal, label_of)
+    roster = _roster_rows(graph, people, principal, label_of)
     if not roster:
         roster_note = "No roster yet — run `bob scan`."
-    elif personal_n:
-        roster_note = (
-            "%d of %d use a personal address, so I can't tell where they work. "
-            "A domain is where someone emailed from, not where they work now."
-            % (personal_n, len(roster)))
     else:
-        roster_note = ("A domain is where someone emailed from, "
-                       "not where they work now.")
+        roster_note = "Everyone Bob found, and how you came to know them."
     if roster and not any(r["last"] for r in roster):
         roster_note += (" Last contact is blank for everyone — run "
                         "`bob roster` to fill it in.")

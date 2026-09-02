@@ -34,14 +34,32 @@ python3 "${CLAUDE_PLUGIN_ROOT}/tools/bob.py" graph \
   --out "$CLAUDE_PLUGIN_OPTION_DATA_DIR/network.html"
 ```
 
-Then open it — the decision that the scan carries the value depends on the page
-actually appearing, not on a path being printed:
+**Do not open it yourself.** Hand them the path and let them click.
 
-```bash
-open "$CLAUDE_PLUGIN_OPTION_DATA_DIR/network.html" 2>/dev/null \
-  || xdg-open "$CLAUDE_PLUGIN_OPTION_DATA_DIR/network.html" 2>/dev/null \
-  || echo "Open this in your browser: $CLAUDE_PLUGIN_OPTION_DATA_DIR/network.html"
-```
+This reverses an earlier decision. The original reasoning was that with no server
+there is no second moment, so the page had to appear or the value would be lost
+to a path in scrollback. The first real user found the window seizing the screen
+*jarring* — which is not how anyone should meet their own network for the first
+time. A link clicked now lands in the same moment and lets them arrive rather
+than be dropped. The fear was "forgotten", never "one click".
+
+Say where it is, that it persists, and how to redraw it — none of which the user
+can otherwise know:
+
+> Your network is at **<data_dir>/network.html** — open it whenever you like.
+>
+> It stays there; it is a file on your disk, not a session. Run /bob-graph to
+> redraw it from what Bob already has, in seconds, without touching your mail
+> again. The table behind it is intros.csv in the same folder, and it is yours
+> to keep, edit, or delete.
+
+Write the real resolved path, not the variable.
+
+**Never put a slash command or a path in backticks in anything the user sees.**
+Formatted as code it renders with a run-in-terminal button, and a slash command
+is not a shell command. The first real user clicked exactly that and got
+`zsh: no such file or directory: /bob-scan`, twice — the most obvious control on
+the screen dead-ended the first run.
 
 ## What to say
 
@@ -62,8 +80,10 @@ Two things are load-bearing:
 The scan leaves `Last email` blank for everyone — filling it is a second pass
 over the mailbox, so it gets its own consent rather than being smuggled in here.
 
-> - `/bob-roster` — *fill in when you last spoke to each of these people*
-> - `/bob-table` — *put these in an Airtable base you can sort and filter*
+> - /bob-roster — *fill in when you last spoke to each of these people.*
+> *This one walks the whole mailbox rather than the intro threads, so it is
+> slow — tens of minutes on a large account.*
+> - /bob-table — *put these in an Airtable base you can sort and filter*
 > - *or nothing — the graph is yours, and it'll be here*
 
 Doing nothing is a finished outcome. Do not chase it.
