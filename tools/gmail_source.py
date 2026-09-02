@@ -103,18 +103,28 @@ class GmailSource:
             self._principal = self.svc.users().getProfile(userId="me").execute()["emailAddress"].lower()
         return self._principal
 
+    # Gmail has an index; asking it about one person is a single request.
+    # `last_direct_contact` reads this to choose between asking per person and
+    # walking the whole mailbox. MboxSource does not set it: a local file has
+    # no index, and walking it is cheap.
+    cheap_search = True
+
     def search(self, query: str, limit=None) -> Sequence[str]:
-        """`limit=None` pages until Gmail runs out. Search is cheap — 100 ids
-        per request — so exhaustiveness costs little here. The expense is in
-        `fetch`, one call per thread, which is why the caller reports the
-        candidate count before starting."""
+        """`limit=None` pages until Gmail runs out.
+
+        500 ids per request, which is the API's maximum. It was 100, and on a
+        broad query -- `roster` asks for five years of a whole mailbox -- that
+        is hundreds of round trips before the caller learns how much work it
+        has. Search is still cheap next to `fetch`, which costs one call per
+        thread, but "cheap" stopped being true at that scale.
+        """
         ids: list[str] = []
         page = None
         while limit is None or len(ids) < limit:
             resp = (
                 self.svc.users().threads()
                 .list(userId="me", q=query,
-                      maxResults=100 if limit is None else min(100, limit - len(ids)),
+                      maxResults=500 if limit is None else min(500, limit - len(ids)),
                       pageToken=page)
                 .execute()
             )

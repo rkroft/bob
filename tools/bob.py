@@ -215,22 +215,30 @@ def cmd_roster(args) -> int:
         return 1
 
     source, _ = build_source(args)
+    # flush: stdout is block-buffered when it is not a terminal, so a plugin
+    # capturing this saw nothing at all until the process ended -- the exact
+    # silence this whole change exists to remove.
     print(f"Reading headers for {len(people)} people. No message bodies are "
-          f"read and none are kept.")
+          f"read and none are kept.", flush=True)
+    print("Working out what to read.", flush=True)
 
     # The roster size is not the work. This walks the mailbox, and saying
     # "517 people" while reading twenty thousand threads is how a two-hour run
     # looked like a hang -- the number on screen implied it was nearly done.
-    def _announce_threads(n: int) -> None:
+    def _announce(n: int, unit: str) -> None:
         if not n:
             return
-        mins = round(n / 170)
-        # No estimate below a couple of minutes: "roughly 1 min" on a job that
-        # takes four seconds is a small lie, and the same sentence has to stay
-        # trustworthy when the answer is two hours.
+        # Two paths, two rates, both measured rather than guessed. Asking
+        # about a person averaged 84/min against a real Gmail account; 80 is
+        # used so the estimate errs long. The first version of this line said
+        # 250 and promised "roughly 2 min" for a six-minute job -- the same
+        # kind of small lie the rest of this command was fixed for.
+        mins = round(n / (80 if unit == "people" else 170))
         when = f" — roughly {mins} min" if mins >= 2 else ""
-        print(f"That means reading {n:,} threads{when}. Progress below; "
-              f"partial results are saved as it goes.", flush=True)
+        what = (f"Asking about each of the {n:,} people"
+                if unit == "people" else f"That means reading {n:,} threads")
+        print(f"{what}{when}. Progress below; partial results are saved as it "
+              f"goes.", flush=True)
 
     def _save(seen_so_far: dict) -> None:
         write_people([replace(p, last_contact=seen_so_far[p.address].date)
@@ -239,7 +247,7 @@ def cmd_roster(args) -> int:
 
     def _tick(done: int, total: int, live: dict) -> None:
         pct = round(100 * done / total) if total else 100
-        print(f"  {done:,}/{total:,} threads ({pct}%) · "
+        print(f"  {done:,}/{total:,} ({pct}%) · "
               f"{len(live)} of {len(people)} people placed", flush=True)
         # Checkpoint. Nothing was written until the very end, so a run killed
         # at 95% left the roster exactly as it started -- two hours for nothing.
@@ -248,7 +256,7 @@ def cmd_roster(args) -> int:
     seen = last_direct_contact(source, source.principal(),
                                addresses={p.address for p in people},
                                query=args.query, limit=args.limit_net or 100000,
-                               on_start=_announce_threads, on_progress=_tick)
+                               on_start=_announce, on_progress=_tick)
 
     updated = [replace(p, last_contact=seen[p.address].date)
                if p.address in seen else p

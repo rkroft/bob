@@ -119,13 +119,21 @@ def test_only_addresses_asked_for_are_returned_when_a_filter_is_given():
 # a long run look like a hang rather than a long run.
 # --------------------------------------------------------------------------
 
-def test_the_thread_count_is_announced_before_the_work_starts():
-    """The roster size is not the work. `on_start` fires with what will
-    actually be read."""
-    seen = []
-    s = src(msg(3, ME, [DANA]), msg(9, DANA, [ME]))
-    last_direct_contact(s, ME, on_start=seen.append)
-    assert seen == [2]
+def test_the_work_is_announced_with_its_unit_before_it_starts():
+    """The roster size is not the work, and the two paths do different work.
+    Saying "people" over a mailbox walk is what made a ten-hour run look
+    nearly done."""
+    walked = []
+    last_direct_contact(src(msg(3, ME, [DANA]), msg(9, DANA, [ME])), ME,
+                        on_start=lambda n, unit: walked.append((n, unit)))
+    assert walked == [(2, "threads")]
+
+    asked = []
+    last_direct_contact(
+        SearchableSource([Thread(id="t1", messages=[msg(9, DANA, [ME])])]),
+        ME, addresses={DANA},
+        on_start=lambda n, unit: asked.append((n, unit)))
+    assert asked == [(1, "people")]
 
 
 def test_progress_reports_and_hands_over_the_live_results():
@@ -148,3 +156,82 @@ def test_progress_is_optional():
     """Every existing caller passes neither hook."""
     seen = last_direct_contact(src(msg(9, DANA, [ME])), ME)
     assert DANA in seen
+
+
+# --------------------------------------------------------------------------
+# Asking per person instead of reading the whole mailbox
+#
+# The walk is exhaustive and unusable: five years of a real mailbox measured
+# 100,000 threads at one request each -- about ten hours -- so `last_contact`
+# stayed empty forever. A mailbox that can search answers per person directly.
+# --------------------------------------------------------------------------
+
+class SearchableSource(FakeSource):
+    """A mailbox with an index. Records what it was asked, so a test can prove
+    it was asked about people rather than handed a date range."""
+    cheap_search = True
+
+    def __init__(self, threads, principal=ME):
+        super().__init__(threads, principal)
+        self.queries = []
+
+    def search(self, query, limit=200):
+        self.queries.append((query, limit))
+        # Newest first, the way a real mailbox answers.
+        ordered = sorted(self._threads.values(),
+                         key=lambda t: max(m.date for m in t.messages),
+                         reverse=True)
+        hit = [t.id for t in ordered
+               if any(q in (m.from_addr, *m.to_addrs)
+                      for m in t.messages
+                      for q in [query.split("from:")[1].split(" ")[0]])]
+        return hit[:limit]
+
+
+def test_a_searchable_mailbox_is_asked_about_each_person():
+    s = SearchableSource([Thread(id="t1", messages=[msg(9, DANA, [ME])])])
+    seen = last_direct_contact(s, ME, addresses={DANA})
+    assert seen[DANA].date.endswith("-09")
+    assert all(DANA in q for q, _ in s.queries), s.queries
+    assert not any("newer_than" in q for q, _ in s.queries)
+
+
+def test_the_walk_is_still_used_when_the_mailbox_cannot_search():
+    """A local file has no index. It must keep walking, not silently return
+    nothing."""
+    s = FakeSource([Thread(id="t1", messages=[msg(9, DANA, [ME])])])
+    assert DANA in last_direct_contact(s, ME, addresses={DANA})
+
+
+def test_newsletters_do_not_hide_the_last_real_exchange():
+    """THE failure this design has to survive. The newest mail involving
+    someone is often machine-sent; answering from the first few threads would
+    report no contact at all with a person you emailed last week."""
+    from last_contact import PROBE
+    threads = [Thread(id="b%d" % i, messages=[msg(20 + i, DANA, [ME], is_bulk=True)])
+               for i in range(PROBE + 3)]                # newest, all bulk
+    threads.append(Thread(id="real", messages=[msg(5, DANA, [ME])]))  # older, real
+    seen = last_direct_contact(SearchableSource(threads), ME, addresses={DANA})
+    assert DANA in seen, "gave up inside the first probe and lost a real exchange"
+    assert seen[DANA].date.endswith("-05")
+
+
+def test_a_person_with_only_machine_mail_gets_no_date_rather_than_a_wrong_one():
+    """Bob reads one channel and never asserts absence -- but it must not
+    invent a date from a newsletter either."""
+    threads = [Thread(id="b%d" % i, messages=[msg(20, DANA, [ME], is_bulk=True)])
+               for i in range(3)]
+    assert last_direct_contact(SearchableSource(threads), ME,
+                               addresses={DANA}) == {}
+
+
+def test_a_failing_search_costs_one_person_not_the_run():
+    class Broken(SearchableSource):
+        def search(self, query, limit=200):
+            if DANA in query:
+                raise RuntimeError("boom")
+            return super().search(query, limit)
+
+    s = Broken([Thread(id="t1", messages=[msg(9, BEN, [ME])])])
+    seen = last_direct_contact(s, ME, addresses={DANA, BEN})
+    assert DANA not in seen and BEN in seen

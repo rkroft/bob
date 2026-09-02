@@ -51,6 +51,53 @@ def _counterparts(m, principal: str) -> list:
 # against the network round-trips it wraps.
 CHUNK = 200
 
+# Newest threads to look at per person on the targeted path, and the wider
+# second look when none of them turn out to be a real exchange.
+PROBE, PROBE_WIDE = 6, 30
+
+
+def _targeted(source, principal, addresses, query, on_start, on_progress) -> dict:
+    """Ask the mailbox about each person, instead of reading the whole mailbox.
+
+    The walk below is exhaustive and unusable: five years of a real mailbox is
+    100,000 threads at one request each, about ten hours, and it silently stops
+    at the cap. Nobody runs that, so `last_contact` stayed empty forever -- a
+    performance problem severe enough to be a missing feature.
+
+    A mailbox that can search answers this directly. Results come back
+    newest-first, so the first qualifying thread IS the last contact.
+
+    **The escalation is the important part.** The most recent mail involving
+    someone is often a newsletter or a calendar invite, which is not the two of
+    you talking. If none of the first `PROBE` threads carry a direct message,
+    the honest conclusion is not "never" -- it is "not in the newest few". So
+    look wider once before giving up. Cost is bounded: only the people whose
+    recent mail is all machine-sent pay for it.
+    """
+    people = sorted({a.lower() for a in addresses
+                     if a and a.lower() != principal})
+    if on_start:
+        on_start(len(people), "people")
+
+    out: dict = {}
+    for i, addr in enumerate(people, 1):
+        base = f"from:{addr} OR to:{addr}"
+        scoped = f"({query}) ({base})" if query else base
+        for width in (PROBE, PROBE_WIDE):
+            try:
+                ids = source.search(scoped, limit=width)
+            except Exception:
+                # One unsearchable address must not end the run. A person with
+                # no date is already a state Bob knows how to report.
+                break
+            for thread in source.fetch(ids, include_bodies=False):
+                _absorb(thread, principal, {addr}, out)
+            if addr in out or len(ids) < width:
+                break          # found it, or the mailbox has nothing more
+        if on_progress and (i % 25 == 0 or i == len(people)):
+            on_progress(i, len(people), out)
+    return out
+
 
 def last_direct_contact(source, principal: str,
                         addresses: Optional[Iterable[str]] = None,
@@ -68,17 +115,26 @@ def last_direct_contact(source, principal: str,
     took two hours printed one line at the start and nothing after. Fetching in
     chunks costs nothing and makes both progress and checkpointing possible.
 
-    `on_start(n_threads)` fires once the work is actually known -- the roster
-    size is not it. `on_progress(done, total, found)` fires per chunk and is
+    `on_start(n, unit)` fires once the work is actually known -- the unit is
+    "threads" when walking and "people" when asking per person, because the
+    two paths do genuinely different amounts of work and saying "people"
+    over a mailbox walk is what made a ten-hour run look nearly done. `on_progress(done, total, found)` fires per chunk and is
     handed the live results, so a caller that persists there turns a kill from
     total loss into a partial answer.
     """
     principal = (principal or "").lower()
+
+    # A searchable mailbox is asked about each person; a local file is walked,
+    # because it has no index and reading it is cheap anyway.
+    if addresses is not None and getattr(source, "cheap_search", False):
+        return _targeted(source, principal, addresses, query,
+                         on_start, on_progress)
+
     wanted = {a.lower() for a in addresses} if addresses is not None else None
 
     ids = list(source.search(query, limit=limit))
     if on_start:
-        on_start(len(ids))
+        on_start(len(ids), "threads")
 
     out: dict = {}
     for i in range(0, len(ids), CHUNK):
