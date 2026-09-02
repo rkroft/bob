@@ -93,8 +93,35 @@ def scan(
         # the fetch is one call per thread and is where the minutes go.
         progress(len(ids))
 
+    return scan_threads(
+        source.fetch(ids, include_bodies=True), principal,
+        link_for=link_for, names_out=names_out,
+        contacted_out=contacted_out, automated_out=automated_out,
+    )
+
+
+def scan_threads(
+    threads,
+    principal: str,
+    *,
+    link_for: Optional[Callable[[str], str]] = None,
+    names_out: Optional[dict] = None,
+    contacted_out: Optional[set] = None,
+    automated_out: Optional[set] = None,
+) -> list[IntroRow]:
+    """Adjudicate threads that have already been retrieved.
+
+    Split out of `scan` for the connector path, where retrieval happens in the
+    agent rather than here (`Connector Pivot.md` §2.1) and there is nothing to
+    search. Both paths share this so a source can never quietly get different
+    detection: the only difference between them is where the threads came from.
+
+    Bodies are optional. On the connector path `body_text` is None throughout,
+    which `_first_body` already reads as "no body" — so `detect` degrades to
+    its metadata signals without needing to be told which source it is on.
+    """
     rows: list[IntroRow] = []
-    for thread in source.fetch(ids, include_bodies=True):
+    for thread in threads:
         for m in thread.messages:
             if contacted_out is not None and m.from_addr == principal:
                 # Written TO by the principal. Being a recipient of their own

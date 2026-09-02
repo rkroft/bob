@@ -2,6 +2,7 @@
 
     bob scan  --mbox PATH --principal you@example.com
     bob scan  --gmail
+    bob scan  --connector FILE... --principal you@example.com
     bob graph
 
 `scan` reads mail and writes intros.csv. `graph` reads intros.csv and writes
@@ -29,7 +30,8 @@ from people_store import build_people, read_people, write_people  # noqa: E402
 from mbox_source import MboxSource  # noqa: E402
 from render import render  # noqa: E402
 from intro_detect import search_queries  # noqa: E402
-from scan import scan  # noqa: E402
+from scan import scan, scan_threads  # noqa: E402
+from connector_source import ConnectorSource  # noqa: E402
 
 DEFAULT_OUT = ROOT / "reports" / "intros.csv"
 DEFAULT_HTML = ROOT / "reports" / "network.html"
@@ -84,7 +86,21 @@ def build_source(args):
                   f"(BOB_GOOGLE_TOKEN) and its own output files.")
         return source, gmail_link
 
-    raise SystemExit("need --mbox PATH or --gmail")
+    if args.connector:
+        # The file says nothing about whose mailbox it is -- the agent that
+        # wrote it knew, and that knowledge did not survive to disk. So
+        # --principal is required here for the same reason it is on --mbox,
+        # and for the opposite reason it is refused on --gmail, where the
+        # token is the authority.
+        if not given:
+            raise SystemExit("--principal is required with --connector")
+        if len(given) > 1:
+            print(f"reading as {given[0]} — Bob reads one mailbox at a time, "
+                  f"so {', '.join(given[1:])} "
+                  f"{'is' if len(given) == 2 else 'are'} not read by this run.")
+        return ConnectorSource(given[0], list(args.connector)), gmail_link
+
+    raise SystemExit("need --mbox PATH, --gmail, or --connector FILE...")
 
 
 def _announce(n: int) -> None:
@@ -99,10 +115,20 @@ def cmd_scan(args) -> int:
     capped: list = []
     contacted: set = set()
     automated: set = set()
-    rows = scan(source, link_for=link_for, names_out=seen_names,
-                limit_per_query=args.limit_net, capped_out=capped,
-                contacted_out=contacted, automated_out=automated,
-                progress=_announce)
+    if isinstance(source, ConnectorSource):
+        # Retrieval already happened, in the agent. There is no net to run and
+        # nothing to cap, so the scan starts at adjudication -- and the count
+        # is known up front rather than estimated.
+        threads = source.all_threads()
+        _announce(len(threads))
+        rows = scan_threads(threads, source.principal(), link_for=link_for,
+                            names_out=seen_names, contacted_out=contacted,
+                            automated_out=automated)
+    else:
+        rows = scan(source, link_for=link_for, names_out=seen_names,
+                    limit_per_query=args.limit_net, capped_out=capped,
+                    contacted_out=contacted, automated_out=automated,
+                    progress=_announce)
     names = {a: best_name(v) for a, v in seen_names.items()}
 
     out = Path(args.out)
@@ -299,6 +325,8 @@ def main(argv=None) -> int:
     s = sub.add_parser("scan", help="read mail, write intros.csv")
     s.add_argument("--mbox", type=Path, help=".mbox file or a directory of them")
     s.add_argument("--gmail", action="store_true", help="use the Gmail source")
+    s.add_argument("--connector", type=Path, nargs="+", metavar="FILE",
+                   help="JSONL written by the agent from the Gmail connector")
     s.add_argument("--principal", help="the mailbox owner's address")
     s.add_argument("--out", type=Path, default=DEFAULT_OUT)
     s.add_argument("--people", type=Path, default=DEFAULT_PEOPLE)
