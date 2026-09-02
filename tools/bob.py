@@ -217,9 +217,38 @@ def cmd_roster(args) -> int:
     source, _ = build_source(args)
     print(f"Reading headers for {len(people)} people. No message bodies are "
           f"read and none are kept.")
+
+    # The roster size is not the work. This walks the mailbox, and saying
+    # "517 people" while reading twenty thousand threads is how a two-hour run
+    # looked like a hang -- the number on screen implied it was nearly done.
+    def _announce_threads(n: int) -> None:
+        if not n:
+            return
+        mins = round(n / 170)
+        # No estimate below a couple of minutes: "roughly 1 min" on a job that
+        # takes four seconds is a small lie, and the same sentence has to stay
+        # trustworthy when the answer is two hours.
+        when = f" — roughly {mins} min" if mins >= 2 else ""
+        print(f"That means reading {n:,} threads{when}. Progress below; "
+              f"partial results are saved as it goes.", flush=True)
+
+    def _save(seen_so_far: dict) -> None:
+        write_people([replace(p, last_contact=seen_so_far[p.address].date)
+                      if p.address in seen_so_far else p
+                      for p in people], people_path)
+
+    def _tick(done: int, total: int, live: dict) -> None:
+        pct = round(100 * done / total) if total else 100
+        print(f"  {done:,}/{total:,} threads ({pct}%) · "
+              f"{len(live)} of {len(people)} people placed", flush=True)
+        # Checkpoint. Nothing was written until the very end, so a run killed
+        # at 95% left the roster exactly as it started -- two hours for nothing.
+        _save(live)
+
     seen = last_direct_contact(source, source.principal(),
                                addresses={p.address for p in people},
-                               query=args.query, limit=args.limit_net or 100000)
+                               query=args.query, limit=args.limit_net or 100000,
+                               on_start=_announce_threads, on_progress=_tick)
 
     updated = [replace(p, last_contact=seen[p.address].date)
                if p.address in seen else p

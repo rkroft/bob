@@ -46,32 +46,61 @@ def _counterparts(m, principal: str) -> list:
     return [a for a in everyone if a and a != principal]
 
 
+# Threads per fetch call. Small enough that progress moves visibly and a
+# checkpoint is never far behind; large enough that the bookkeeping is noise
+# against the network round-trips it wraps.
+CHUNK = 200
+
+
 def last_direct_contact(source, principal: str,
                         addresses: Optional[Iterable[str]] = None,
-                        query: str = "", limit: int = 100000) -> dict:
+                        query: str = "", limit: int = 100000,
+                        on_start=None, on_progress=None) -> dict:
     """address -> LastSeen, for the most recent direct message either way.
 
     `addresses`, when given, restricts the result to people already on the
     roster -- the only ones it can display -- rather than returning every
     address the mailbox has ever touched.
+
+    This walks the mailbox, not the roster. That is the expensive shape and it
+    was invisible: `source.fetch` returns only once every thread is in memory,
+    so the caller could not report progress even in principle, and a run that
+    took two hours printed one line at the start and nothing after. Fetching in
+    chunks costs nothing and makes both progress and checkpointing possible.
+
+    `on_start(n_threads)` fires once the work is actually known -- the roster
+    size is not it. `on_progress(done, total, found)` fires per chunk and is
+    handed the live results, so a caller that persists there turns a kill from
+    total loss into a partial answer.
     """
     principal = (principal or "").lower()
     wanted = {a.lower() for a in addresses} if addresses is not None else None
 
+    ids = list(source.search(query, limit=limit))
+    if on_start:
+        on_start(len(ids))
+
     out: dict = {}
-    for thread in source.fetch(source.search(query, limit=limit),
-                               include_bodies=False):
-        for m in thread.messages:
-            if m.date is None or m.is_bulk or m.is_calendar_invite:
-                continue
-            others = _counterparts(m, principal)
-            if not others or len(others) > DIRECT_MAX_RECIPIENTS:
-                continue
-            day = m.date.date().isoformat()
-            for addr in others:
-                if wanted is not None and addr not in wanted:
-                    continue
-                prev = out.get(addr)
-                if prev is None or day > prev.date:
-                    out[addr] = LastSeen(date=day, address=addr)
+    for i in range(0, len(ids), CHUNK):
+        for thread in source.fetch(ids[i:i + CHUNK], include_bodies=False):
+            _absorb(thread, principal, wanted, out)
+        if on_progress:
+            on_progress(min(i + CHUNK, len(ids)), len(ids), out)
     return out
+
+
+def _absorb(thread, principal, wanted, out) -> None:
+    """Fold one thread's direct messages into `out`, newest date winning."""
+    for m in thread.messages:
+        if m.date is None or m.is_bulk or m.is_calendar_invite:
+            continue
+        others = _counterparts(m, principal)
+        if not others or len(others) > DIRECT_MAX_RECIPIENTS:
+            continue
+        day = m.date.date().isoformat()
+        for addr in others:
+            if wanted is not None and addr not in wanted:
+                continue
+            prev = out.get(addr)
+            if prev is None or day > prev.date:
+                out[addr] = LastSeen(date=day, address=addr)

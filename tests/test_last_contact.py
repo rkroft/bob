@@ -107,3 +107,44 @@ def test_only_addresses_asked_for_are_returned_when_a_filter_is_given():
     seen = last_direct_contact(src(msg(3, ME, [DANA]), msg(4, ME, [BEN])),
                                ME, addresses={DANA})
     assert set(seen) == {DANA}
+
+
+# --------------------------------------------------------------------------
+# Progress and checkpointing
+#
+# A real roster run took over two hours against a 325k-thread mailbox and
+# printed one line at the start. Nothing was written until the last statement,
+# so killing it at any point returned the roster exactly as it started. And it
+# announced the number of PEOPLE while the unit of work was threads, which made
+# a long run look like a hang rather than a long run.
+# --------------------------------------------------------------------------
+
+def test_the_thread_count_is_announced_before_the_work_starts():
+    """The roster size is not the work. `on_start` fires with what will
+    actually be read."""
+    seen = []
+    s = src(msg(3, ME, [DANA]), msg(9, DANA, [ME]))
+    last_direct_contact(s, ME, on_start=seen.append)
+    assert seen == [2]
+
+
+def test_progress_reports_and_hands_over_the_live_results():
+    """A caller has to be able to persist mid-run, so the callback receives the
+    partial dict rather than only a count."""
+    from last_contact import CHUNK
+    msgs = [msg(i % 28 + 1, "p%03d@example.com" % i, [ME]) for i in range(CHUNK + 5)]
+    ticks = []
+    last_direct_contact(src(*msgs), ME,
+                        on_progress=lambda d, t, live: ticks.append(
+                            (d, t, len(live), isinstance(live, dict))))
+    assert len(ticks) >= 2, "one chunk means no progress was ever reported"
+    done, total, _, is_dict = ticks[-1]
+    assert done == total and is_dict
+    assert ticks[0][2] > 0, "the first tick already carries results to save"
+    assert ticks[-1][2] >= ticks[0][2], "results only accumulate"
+
+
+def test_progress_is_optional():
+    """Every existing caller passes neither hook."""
+    seen = last_direct_contact(src(msg(9, DANA, [ME])), ME)
+    assert DANA in seen
