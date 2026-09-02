@@ -8,7 +8,7 @@
       "name": "bob",
       "source": "./",
       "description": "Scan your mail, see who connected you to whom, and thank the people who did it.",
-      "version": "0.1.2"
+      "version": "0.1.3"
     }
   ],
   "description": "Bob \u2014 see who connected you to whom, and thank the people who did it."

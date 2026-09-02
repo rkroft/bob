@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -597,3 +598,114 @@ def test_a_malformed_date_is_dropped_rather_than_half_rendered():
     how = _how([_intro(dana, "not-a-date")], {dana: "Dana Okafor"},
                "cy@thirdco.dev")
     assert how == "Dana Okafor introduced you"
+
+
+# --------------------------------------------------------------------------
+# The leaderboard is the whole list
+#
+# It used to be a top ten. The first real user asked for "the total list of
+# people who have made introductions. If many people are 'tied' then order in
+# alphabet order" -- a cut at ten answers "who are your biggest connectors",
+# but the question people bring to this list is "who has helped me", and that
+# has no top ten.
+# --------------------------------------------------------------------------
+
+def _board_graph(n_extra: int) -> GraphData:
+    """One connector with 3, then `n_extra` people with exactly 1 each."""
+    nodes = [Node("dana@example.com", "Dana Okafor", 3, 0, 3)]
+    top = [("dana@example.com", 3)]
+    for i in range(n_extra):
+        addr = "c%02d@example.com" % i
+        # Deliberately reverse-alphabetical names against insertion order, so
+        # an unsorted list and a sorted one cannot look the same.
+        nodes.append(Node(addr, "Zed %02d" % (n_extra - i), 1, 0, 1))
+        top.append((addr, 1))
+    return GraphData(nodes=nodes, edges=[],
+                     stats=Stats(1, len(nodes), 1, 1, 0, "2019-03-14",
+                                 "2026-01-02", 1),
+                     super_connectors=top[:1], top_connectors=top)
+
+
+def _board_json(tmp_path, n_extra=14) -> list:
+    out = tmp_path / "n.html"
+    render(_board_graph(n_extra), out, principal="alice@examplecorp.com")
+    page = out.read_text()
+    m = re.search(r"const board = (\[.*?\]);", page, re.S)
+    assert m, "leaderboard payload not found on the page"
+    return json.loads(m.group(1))
+
+
+def test_the_leaderboard_is_not_capped_at_ten(tmp_path):
+    board = _board_json(tmp_path, n_extra=14)
+    assert len(board) == 15, f"expected everyone, got {len(board)}"
+
+
+def test_leaderboard_ties_break_alphabetically(tmp_path):
+    """Counter.most_common leaves equal counts in insertion order, so people
+    with one introduction each shuffled between renders for no visible
+    reason."""
+    board = _board_json(tmp_path, n_extra=14)
+    assert board[0]["name"] == "Dana Okafor"       # 3 intros, still first
+    tied = [r["name"] for r in board[1:]]          # all have n == 1
+    assert tied == sorted(tied, key=str.lower)
+
+
+def test_the_leaderboard_says_how_many_people_are_on_it(tmp_path):
+    """The full list scrolls, and a scrollbar does not say whether that is
+    twelve people or two hundred."""
+    out = tmp_path / "n.html"
+    render(_board_graph(14), out, principal="alice@examplecorp.com")
+    assert "people have introduced you" in out.read_text()
+
+
+# --------------------------------------------------------------------------
+# The arrivals bubble
+#
+# "Hover over the dots to see individual names pop up in a bubble. So you have
+# a sense of who you met when." The marks are 4.2px and stack vertically, so
+# the answer is the whole month, not the one dot under the cursor -- answering
+# with a single name hides that four people arrived together.
+# --------------------------------------------------------------------------
+
+def test_the_bubble_lists_everyone_who_arrived_that_month():
+    from render import _arrivals
+    cols = [{"month": "2025-06", "people": [
+        {"person": "b@otherco.io", "by": "d@example.com", "direction": "inbound"},
+        {"person": "c@thirdco.com", "by": "d@example.com", "direction": "inbound"},
+        {"person": "k@fourthco.dev", "by": "d@example.com", "direction": "outbound"},
+    ]}]
+    got = _arrivals(cols, {"b@otherco.io": "Ben Mercer",
+                           "c@thirdco.com": "Cara Silva",
+                           "k@fourthco.dev": "Kai Rivera",
+                           "d@example.com": "Dana Okafor"})
+    assert len(got) == 1
+    assert got[0]["when"] == "June 2025"          # not "2025-06"
+    assert [p["name"] for p in got[0]["people"]] == [
+        "Ben Mercer", "Cara Silva", "Kai Rivera"]
+    assert got[0]["people"][0]["by"] == "Dana Okafor"
+    assert got[0]["people"][2]["dir"] == "outbound"
+
+
+def test_a_malformed_month_falls_back_rather_than_crashing():
+    from render import _arrivals
+    got = _arrivals([{"month": "not-a-month", "people": []}], {})
+    assert got[0]["when"] == "not-a-month"
+
+
+def test_the_marks_carry_no_native_title_tooltips(tmp_path):
+    """Native <title> is slow to appear, unstyleable, and answers for one mark.
+    Two tooltips for the same hover is worse than either."""
+    out = tmp_path / "n.html"
+    render(G, out, principal="alice@examplecorp.com", intros=INTROS_G)
+    page = out.read_text()
+    assert "<title>" not in page.split("</head>")[1]
+
+
+def test_one_super_connector_is_a_person_not_people(tmp_path):
+    """render_ring.py had this right; this renderer announced "1 people
+    account for half" on every page with a single super-connector."""
+    out = tmp_path / "n.html"
+    render(G, out, principal="alice@examplecorp.com", intros=INTROS_G)
+    page = out.read_text()
+    assert "1 person accounts for half" in page
+    assert "1 people account" not in page

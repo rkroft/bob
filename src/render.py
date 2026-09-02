@@ -99,18 +99,32 @@ _TEMPLATE = Template("""<!doctype html>
   #filter .f.on { background:$coral; border-color:$coral; color:#fff; }
   #strip.only-inbound .mk.outbound,
   #strip.only-outbound .mk.inbound { display:none; }
-  #strip { margin:4px 24px 40px; overflow-x:auto; cursor:grab; }
+  #strip { margin:4px 24px 0; overflow-x:auto; cursor:grab; }
   #strip.drag { cursor:grabbing; }
-  #scrub { width:calc(100% - 48px); margin:10px 24px 0; accent-color:$coral; }
+  /* Scrubber sits UNDER the strip: the control belongs below the thing it
+     moves, the way a scrollbar does. */
+  #scrub { width:calc(100% - 48px); margin:6px 24px 40px; accent-color:$coral; }
+  #atip { position:fixed; z-index:20; max-width:290px; padding:9px 11px;
+         border-radius:10px; background:#fffdfa; color:$ink; font-size:12.5px;
+         line-height:1.45; border:1px solid rgba(17,27,33,.12);
+         box-shadow:0 8px 24px rgba(17,27,33,.16); pointer-events:none; }
+  @media (prefers-color-scheme: dark) {
+    #atip { background:#221f1c; color:#eee8e2; border-color:rgba(255,255,255,.14); } }
+  #atip b { display:block; font:600 12px/1.3 $serif; font-style:italic;
+            margin-bottom:5px; color:$muted; }
+  #atip .p { display:block; }
+  #atip .p i { color:$muted; font-style:normal; }
+  .colhit { fill:transparent; }
   .card { position:absolute; padding:14px 16px; border-radius:16px;
           background:#fff; border:1px solid rgba(17,27,33,.10);
           box-shadow:0 8px 30px rgba(17,27,33,.10); overflow:auto; }
   @media (prefers-color-scheme: dark) { .card { background:#221f1c;
           border-color:rgba(255,255,255,.10); } }
-  #board { top:16px; left:20px; width:250px; max-height:calc(76vh - 32px); }
+  #board { top:16px; left:20px; width:250px; max-height:calc(76vh - 32px);
+           display:flex; flex-direction:column; overflow:hidden; }
   #board h2 { margin:0; font:600 14px/1.3 $serif; font-style:italic; }
   #board .sub { font-size:11px; margin-bottom:9px; }
-  #board ol { margin:0; padding-left:20px; }
+  #board ol { margin:0; padding-left:20px; overflow-y:auto; min-height:0; }
   #board li { padding:3px 0; border-radius:6px; }
   #board li:hover { background:rgba(214,91,60,.09); }
   #board li b { float:right; font-weight:600; color:$coral; }
@@ -147,16 +161,17 @@ $ring_markup
   <p class="note">Who came into your network, and when. Each mark is a person,
      placed at the month they first arrived &mdash; so this answers who joined
      your world rather than what happened that month. Drag the strip or use the
-     scrubber; hover a mark for the name.</p>
+     scrubber underneath it; hover a month to see everyone who arrived in it.</p>
   <div id="filter" role="group" aria-label="Which arrivals to show">
     <button class="f on" data-show="all">Everyone</button>
     <button class="f" data-show="inbound">Came into my network</button>
     <button class="f" data-show="outbound">People I introduced</button>
   </div>
-  <input id="scrub" type="range" min="0" max="1000" value="1000"
-         aria-label="Scrub through time">
   <div id="strip"><svg viewBox="0 0 $stripw $striph" width="$stripw"
        height="$striph" role="img" aria-label="Arrivals over time">$stripsvg</svg></div>
+  <input id="scrub" type="range" min="0" max="1000" value="1000"
+         aria-label="Scrub through time">
+  <div id="atip" role="status" aria-live="polite" hidden></div>
 </section>
 <section id="pane-roster" class="pane">
   <p class="note">$rosternote</p>
@@ -193,6 +208,14 @@ $ring_markup
 
   const board = $board;
   const ol = document.querySelector('#board ol');
+  // The subtitle carries the count: with the full list the card scrolls, and
+  // a scrollbar alone does not tell you whether that is 12 people or 200.
+  const bsub = document.querySelector('#board .sub');
+  if (bsub) {
+    bsub.textContent = board.length === 1
+      ? '1 person has introduced you'
+      : board.length + ' people have introduced you';
+  }
   board.forEach(r => {
     const li = document.createElement('li');
     li.dataset.id = r.id;                // shared key: lets the ring wire this row to its own node
@@ -252,6 +275,63 @@ $ring_markup
                              strip.classList.add('drag'); };
   window.onmouseup = () => { down = false; strip.classList.remove('drag'); };
   window.onmousemove = e => { if (down) strip.scrollLeft = startL - (e.pageX - startX); };
+
+  // --- who arrived that month -------------------------------------------
+  // Hovering answers with the whole column, not the one dot under the cursor.
+  // Marks are 4.2px and stack, so a per-dot tooltip demanded precision nobody
+  // has and hid the fact that several people arrived together.
+  const arrivals = $arrivals;
+  const atip = document.getElementById('atip');
+
+  const showTip = (i, ev) => {
+    const col = arrivals[i];
+    if (!col) return;
+    const only = strip.classList.contains('only-inbound') ? 'inbound'
+               : strip.classList.contains('only-outbound') ? 'outbound' : null;
+    const people = only ? col.people.filter(p => p.dir === only) : col.people;
+    if (!people.length) { hideTip(); return; }
+
+    atip.textContent = '';                      // textContent: mail-derived text
+    const h = document.createElement('b');
+    h.textContent = col.when + ' · ' + people.length +
+                    (people.length === 1 ? ' person' : ' people');
+    atip.appendChild(h);
+    people.slice(0, 12).forEach(p => {
+      const row = document.createElement('span');
+      row.className = 'p';
+      row.textContent = p.name;
+      const by = document.createElement('i');
+      by.textContent = p.dir === 'outbound'
+        ? '  · you introduced them'
+        : (p.by ? '  · via ' + p.by : '');
+      row.appendChild(by);
+      atip.appendChild(row);
+    });
+    if (people.length > 12) {
+      const more = document.createElement('span');
+      more.className = 'p';
+      more.textContent = '+ ' + (people.length - 12) + ' more';
+      atip.appendChild(more);
+    }
+
+    atip.hidden = false;
+    // Place it clear of the cursor, and flip when it would leave the viewport.
+    const r = atip.getBoundingClientRect();
+    let x = ev.clientX + 14, y = ev.clientY + 14;
+    if (x + r.width > window.innerWidth - 8) x = ev.clientX - r.width - 14;
+    if (y + r.height > window.innerHeight - 8) y = ev.clientY - r.height - 14;
+    atip.style.left = Math.max(8, x) + 'px';
+    atip.style.top = Math.max(8, y) + 'px';
+  };
+  const hideTip = () => { atip.hidden = true; };
+
+  strip.addEventListener('mousemove', e => {
+    if (down) { hideTip(); return; }            // dragging, not inspecting
+    const hit = e.target.closest ? e.target.closest('.colhit') : null;
+    if (hit) showTip(+hit.dataset.i, e); else hideTip();
+  });
+  strip.addEventListener('mouseleave', hideTip);
+  strip.addEventListener('mousedown', hideTip);
 
   // --- table ------------------------------------------------------------
   // Every cell written with textContent. These are mail-derived strings and a
@@ -337,6 +417,36 @@ def _bars(buckets) -> str:
 SLOT, DOT, ROW_H, TOP = 26, 4.2, 13, 26
 
 
+_MONTH_LABEL = ("January", "February", "March", "April", "May", "June", "July",
+                "August", "September", "October", "November", "December")
+
+
+def _arrivals(columns, label_of) -> list:
+    """Per-column payload for the hover bubble: everyone who arrived that month.
+
+    A month, not a mark. The dots are 4.2px and stack, so hovering one demanded
+    precision nobody has, and answering with a single name hid the fact that
+    four people arrived together -- which is exactly what "a sense of who you
+    met when" is asking about.
+    """
+    out = []
+    for col in columns:
+        y, m = col["month"][:4], col["month"][5:7]
+        try:
+            when = "%s %s" % (_MONTH_LABEL[int(m) - 1], y)
+        except (ValueError, IndexError):
+            when = col["month"]
+        out.append({
+            "when": when,
+            "people": [{
+                "name": label_of.get(p["person"], p["person"]),
+                "by": label_of.get(p["by"], p["by"]),
+                "dir": p["direction"],
+            } for p in col["people"]],
+        })
+    return out
+
+
 def _strip(columns, label_of, service_ids) -> tuple:
     """The horizontal arrivals strip. Returns (svg, width)."""
     if not columns:
@@ -355,23 +465,22 @@ def _strip(columns, label_of, service_ids) -> tuple:
             seen_year.add(year)
             out.append(f'<line x1="{x}" y1="{TOP - 16}" x2="{x}" y2="{height - 18}" '
                        f'stroke="rgba(128,128,128,.16)"/>')
-            out.append(f'<text x="{x + 3}" y="{height - 6}" font-size="10" '
-                       f'fill="#667781">{year}</text>')
+            out.append(f'<text x="{x + 3}" y="{height - 6}" font-size="13" '
+                       f'font-weight="600" fill="#4a5c66">{year}</text>')
+        out.append(f'<rect class="colhit" data-i="{i}" x="{x - SLOT / 2:.1f}" '
+                   f'y="0" width="{SLOT}" height="{height}"/>')
         for j, person in enumerate(col["people"]):
             cy = TOP + j * ROW_H
             colour = OUT_COLOR if person["direction"] == "outbound" else IN_COLOR
-            name = label_of.get(person["person"], person["person"])
-            by = label_of.get(person["by"], person["by"])
-            tip = _html.escape(f'{name} — {"you introduced them" if person["direction"] == "outbound" else "introduced by " + by} · {col["month"]}')
             if person["person"] in service_ids:
                 out.append(f'<rect class="mk {person["direction"]}" '
                            f'x="{x - DOT:.1f}" y="{cy - DOT:.1f}" '
                            f'width="{DOT * 2:.1f}" height="{DOT * 2:.1f}" '
-                           f'fill="{colour}"><title>{tip}</title></rect>')
+                           f'fill="{colour}"/>')
             else:
                 out.append(f'<circle class="mk {person["direction"]}" '
                            f'cx="{x:.1f}" cy="{cy:.1f}" r="{DOT}" '
-                           f'fill="{colour}"><title>{tip}</title></circle>')
+                           f'fill="{colour}"/>')
     return "".join(out), width
 
 
@@ -491,9 +600,16 @@ def render(
     ring_markup, ring_style, ring_script = ring_pane(
         graph, principal=principal, people=people, board_html=_BOARD_HTML)
 
+    # Everyone who has ever introduced you to someone -- not a top ten. The
+    # cut at 10 answered "who are your biggest connectors"; the question people
+    # actually ask of this list is "who has helped me", and that has no top ten.
+    # Ties break alphabetically: Counter.most_common leaves equal counts in
+    # insertion order, so two people with one intro each moved around between
+    # renders for no reason a reader could see.
     board = [{"id": a, "name": label_of.get(a, a.partition("@")[0]), "n": n}
-             for a, n in (graph.top_connectors or graph.super_connectors)[:10]
+             for a, n in (graph.top_connectors or graph.super_connectors)
              if a not in hidden]
+    board.sort(key=lambda r: (-r["n"], r["name"].lower()))
 
     rows = list(intros or [])
     buckets = month_buckets(rows)
@@ -505,6 +621,7 @@ def render(
 
     columns = arrival_columns(rows, principal)
     strip_svg, strip_w = _strip(columns, label_of, service_ids)
+    arrivals = _arrivals(columns, label_of)
     strip_h = TOP + (max((len(c["people"]) for c in columns), default=1) or 1) * ROW_H + 30
     table = [{
         "d": r.date,
@@ -530,8 +647,11 @@ def render(
     s = graph.stats
     span = (f"{s.first_date} to {s.last_date} · {s.last_12mo} in the last 12 months"
             if s and s.first_date else "no introductions found")
-    sc = (f"{len(graph.super_connectors)} people account for half of the "
-          f"introductions made for you" if graph.super_connectors else
+    # render_ring.py has had the singular right all along; this copy did not,
+    # so every network with one super-connector announced "1 people account".
+    _n_sc = len(graph.super_connectors)
+    sc = (f"{_n_sc} {'person accounts' if _n_sc == 1 else 'people account'} for "
+          f"half of the introductions made for you" if graph.super_connectors else
           "click anyone to see who they introduced you to")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -546,6 +666,7 @@ def render(
         rosternote=_html.escape(roster_note),
         bars=_bars(buckets), table=_json(table),
         stripsvg=strip_svg, stripw=strip_w, striph=strip_h,
+        arrivals=_json(arrivals),
         chartw=CHART_W, charth=CHART_H,
         months=len(buckets),
         active=sum(1 for b in buckets if b["total"]),
