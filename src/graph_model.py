@@ -108,9 +108,16 @@ SUPER_CONNECTOR_CAP = 8
 
 
 def _super_connectors(inbound_counts: Counter) -> list:
-    """The smallest set of people accounting for half or more of the inbound
-    introductions (Plugin MVP §4.5). Relative on purpose: a fixed threshold is
-    empty for a normal mailbox and useless for a dense one.
+    """The smallest set of INTRODUCERS accounting for half or more of the
+    inbound introductions (Plugin MVP §4.5). Relative on purpose: a fixed
+    threshold is empty for a normal mailbox and useless for a dense one.
+
+    Introducers, not people. A recruiting inbox and an intro bot both earn a
+    place here on real data, and they are real conduits — the introductions
+    happened. What Bob cannot do is tell them from a founder using `hello@`,
+    because the header that would settle it is stripped by the connector. So
+    the set is honest about what it contains rather than filtered on a guess
+    (HAP-319).
 
     Capped at SUPER_CONNECTOR_CAP regardless of whether half has been reached:
     on a flat distribution "smallest set reaching half" degenerates toward

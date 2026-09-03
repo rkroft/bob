@@ -217,7 +217,7 @@
           <p>Two lines in Claude Code:</p>
           <pre><code>/plugin marketplace add rkroft/bob
 /plugin install bob@bob</code></pre>
-          <p>Then <code>/bob-setup</code>, which walks you through the rest. The source is at <a href="https://github.com/rkroft/bob">github.com/rkroft/bob</a> — MIT licensed, and worth a look before you give any tool access to your mail.</p>
+          <p>Then <code>/bob-setup</code>, which asks two questions. You will also need the Gmail connector switched on for the mailbox you want read — that is how Bob reads your mail. The source is at <a href="https://github.com/rkroft/bob">github.com/rkroft/bob</a> — MIT licensed, and worth a look before you give any tool access to your mail.</p>
           <p>Bob is early. The install works and the scan runs; the follow-up loop and the impact view are still being built.</p>
         </div>
       </section>
@@ -239,7 +239,7 @@
                 <tr><td>Claude desktop app, Code tab</td><td class="yes">Yes</td><td>No terminal needed. Click <strong>+</strong>, then Plugins, then Bob.</td></tr>
                 <tr><td>Claude Code in a terminal</td><td class="yes">Yes</td><td>If you'd rather.</td></tr>
                 <tr><td>Cowork</td><td class="no">Not yet</td><td>Being looked at.</td></tr>
-                <tr><td>Claude chat, on the web</td><td class="no">No</td><td>Runs on Anthropic's servers. Bob runs on yours.</td></tr>
+                <tr><td>Claude chat, on the web</td><td class="no">No</td><td>Cannot run a plugin, and has nowhere to write your files.</td></tr>
                 <tr><td>ChatGPT</td><td class="no">No</td><td>Different plugin format.</td></tr>
               </tbody>
             </table>
@@ -248,13 +248,13 @@
 
         <div class="qa">
           <h3>Do I need to be technical?</h3>
-          <p>Installing Bob doesn't require a terminal. One step in setting it up does feel like developer work, and it's fair to know that before you start: if you want Bob to read Gmail directly, you make your own Google credential for it. That takes about ten minutes, once, and it's free.</p>
-          <p>It's your credential rather than Bob's on purpose. There is no shared application in the middle, which is what makes it true that nobody but you can reach your mail.</p>
+          <p>No terminal, and no developer work. Setup asks two questions: which mailbox to read, and which folder to write to.</p>
+          <p>Bob reads your mail through the Gmail connector on your own Claude account. There is no credential to create, no package to install, and no shared application in the middle — Bob's author has no way to reach your mail.</p>
         </div>
 
         <div class="qa">
-          <h3>Is there a way to skip the Google step?</h3>
-          <p>Yes. Export your mail from Google Takeout and point Bob at the file. No credentials, no packages, nothing to configure. It's the path that works this afternoon — the tradeoff is that a full mail export can take a while to arrive and is a large download.</p>
+          <h3>Can I try it without connecting my mail at all?</h3>
+          <p>Yes. Export your mail from Google Takeout and point Bob at the file. Nothing is connected and nothing is granted — Bob reads a file sitting on your disk. The tradeoff is that a full export takes a while to arrive and is a large download.</p>
         </div>
 
         <div class="qa">
@@ -293,7 +293,8 @@
 
         <div class="qa">
           <h3>Will it send anything on my behalf?</h3>
-          <p>No. Drafts land in your Gmail drafts and stay there. Nothing leaves without you sending it, and the credential Bob uses to read your mail cannot send at all.</p>
+          <p>No. Drafts land in your Gmail drafts and stay there, and nothing leaves without you sending it.</p>
+          <p>Worth being exact: the Gmail connector Bob reads through <em>can</em> send. Bob does not, and no Bob command sends anything. That is a rule Bob keeps rather than something the connector makes impossible.</p>
         </div>
 
         <div class="qa">
@@ -337,7 +338,7 @@
       <section id="data">
         <p class="eyebrow">Five</p>
         <h2>Your data</h2>
-        <p class="lede">Short version: it stays on your computer.</p>
+        <p class="lede">Short version: your files are yours, and the reading goes through Claude.</p>
 
         <div class="qa">
           <h3>Where does everything live?</h3>
@@ -346,12 +347,14 @@
 
         <div class="qa">
           <h3>Can Bob's author see any of it?</h3>
-          <p>No — and not as a policy you have to trust. There is no Bob server, no account, and no mechanism by which your data could reach anyone. She holds no credential of yours because none exists to hold.</p>
+          <p>No — and not as a policy you have to trust. There is no Bob server and no Bob account, and she holds no credential of yours because none exists to hold.</p>
+          <p>Your mail does pass through Anthropic's servers when Claude reads it, under the connector grant already on your account. That is between you and Anthropic, on terms you accepted before Bob existed. Bob's author is not in it.</p>
         </div>
 
         <div class="qa">
           <h3>What exactly can it read?</h3>
-          <p>Your mail, read-only, using a credential you create and store yourself. It can't send, can't delete, and can't touch anything in your account that isn't mail. If you use the export route instead, it reads a file and asks for nothing at all.</p>
+          <p>Your mail, through the Gmail connector on your Claude account. Bob holds no credential of its own.</p>
+          <p>That connector is not read-only — it can draft, label, send and trash. Bob reads and writes drafts, and does nothing else with it. If you use the export route instead, it reads a file and asks for nothing at all.</p>
         </div>
 
         <div class="qa">

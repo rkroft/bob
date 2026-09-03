@@ -650,7 +650,14 @@ def render(
     # render_ring.py has had the singular right all along; this copy did not,
     # so every network with one super-connector announced "1 people account".
     _n_sc = len(graph.super_connectors)
-    sc = (f"{_n_sc} {'person accounts' if _n_sc == 1 else 'people account'} for "
+    # "people" was a claim Bob cannot stand behind: a recruiting inbox and an
+    # intro bot both reached a real super-connector set, and once the name pass
+    # gave them their actual names ("AngelList Talent") they read as people at
+    # a glance. Classifying them is unreliable on the connector path, which
+    # strips the List-Unsubscribe header that would settle it — so the noun is
+    # the thing that changes. "Introducer" is true of every member of this set
+    # whether or not there is a human behind it (HAP-319).
+    sc = (f"{_n_sc} {'introducer accounts' if _n_sc == 1 else 'introducers account'} for "
           f"half of the introductions made for you" if graph.super_connectors else
           "click anyone to see who they introduced you to")
 

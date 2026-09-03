@@ -22,7 +22,7 @@ plausible-looking guess in a disqualifier is worse than a missing one:
   rejected at 0.00 on `automated_sender`, not on bulk), so this is a precision
   risk to measure, not a known failure.
 - `from_name` / `to_names` — **the connector returns bare addresses everywhere.**
-  Not `"Dana Whitfield <dwhitfield@hey.com>"`, just `"dwhitfield@hey.com"`, in both
+  Not `"Dana Okafor <dana.okafor@example.com>"`, just `"dana.okafor@example.com"`, in both
   `search_threads` and `get_thread`. So `scan(names_out=...)` collects nothing
   and `best_name` has no candidates, which means the graph renders local-parts.
   This makes HAP-295 worse rather than better and needs its own answer.

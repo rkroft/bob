@@ -3,9 +3,11 @@
 Bob reads your mail, works out who introduced you to whom, and helps you
 thank them.
 
-It is a [Claude Code](https://claude.com/claude-code) plugin. Everything runs
-on your machine. Bob has no server, no account, and no database — your
-network lives in two CSV files in a folder you choose.
+It is a [Claude Code](https://claude.com/claude-code) plugin. Bob has no
+server, no account, and no database — your network lives in two CSV files in
+a folder you choose. It reads your mail through the Gmail connector already
+on your Claude account, so there is no credential to create and none for Bob
+to hold.
 
 **What it does, in full:** https://rkroft.github.io/bob/
 
@@ -45,33 +47,43 @@ stay the source of truth.
 
 ## Where your data goes
 
-Nowhere, unless you send it there.
-
 `intros.csv`, `people.csv` and `network.html` are written to the folder you
-name at setup. Bob's Python holds no credential but the Gmail token you
-create yourself, and talks to no service but Gmail. The `/bob-table` command
-is the one exception and it says so before it runs.
+name at setup, and stay there.
 
-The [FAQ](https://rkroft.github.io/bob/faq.html) covers this properly, including the Google consent
-screen you will see and why it says what it says.
+The reading is the part worth being precise about. Bob asks Claude to read
+your mail, through the Gmail connector on your own Claude account. Your mail
+passes through Anthropic's servers on the way to the model. That is access
+you already granted Claude — not a new grant, and not a credential Bob
+holds. There is no Bob server, no Bob account, and Bob's author holds
+nothing of yours.
+
+That connector can also send, label and trash mail. Bob does none of those:
+it reads, and it writes drafts. That is a rule Bob keeps, not a lock on the
+connector, and it is more honest to say so than to imply a limit that isn't
+there.
+
+`/bob-table` is the one command that moves anything off your machine, and it
+says so before it runs.
+
+The [FAQ](https://rkroft.github.io/bob/faq.html) covers all of this properly.
 
 ## Running it
 
 Python 3.9+.
 
 ```
-pip install -r requirements.txt
 python tools/bob.py scan --mbox path/to/mail.mbox --principal you@example.com
 python tools/bob.py graph --principal you@example.com
 ```
 
 `--mbox` takes a [Google Takeout](https://takeout.google.com) export and
-needs no credential at all, which is the honest way to try Bob before
-granting it access to anything. `--gmail` uses the API instead, after
-`/bob-setup` walks you through making a token.
+needs no credential, no connector and no install — the offline way to read
+the code and try Bob before granting it anything. The plugin's own path uses
+the Gmail connector instead, and needs neither the export nor `pip`.
 
 ```
-python -m pytest        # 352 tests
+pip install -r requirements.txt   # only for the older --gmail path
+python -m pytest                  # 415 tests
 ```
 
 Every person in this repo's tests and examples is invented. That is a rule,

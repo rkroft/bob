@@ -231,3 +231,50 @@ def test_quoted_header_outranks_signature_and_greeting():
                      Name(DANA, "Dana O", "signature"),
                      Name(DANA, "Dana Okafor", "quoted_header")])
     assert got[DANA].name == "Dana Okafor"
+
+
+def test_a_website_is_not_a_name():
+    """A signature puts a URL where a name sits, and it passes every other
+    test — letters, short, no "@". This reached a real leaderboard."""
+    assert not is_plausible("AmyJacksonTalent.com")
+    assert not is_plausible("example.io")
+    assert merge({}, [Name(DANA, "AmyJacksonTalent.com", "quoted_header")]) == {}
+
+
+def test_initials_and_abbreviations_still_pass():
+    """The dot rule must not cost "J. Smith" or "Dana Okafor Jr."."""
+    assert is_plausible("J. Smith")
+    assert is_plausible("Dana Okafor Jr.")
+    assert is_plausible("A. B. Mercer")
+
+
+def test_a_fuller_form_of_the_same_name_wins_at_equal_evidence():
+    """Someone may sign as "Dana Okafor" while their full name is longer.
+
+    Mirrors mail_source.best_name, and does not reintroduce order-dependence:
+    a proper superset is decided by the names, not by which thread was read
+    first.
+    """
+    got = merge({}, [Name(DANA, "Dana Okafor", "quoted_header", "t1"),
+                     Name(DANA, "Dana Chidi Okafor", "quoted_header", "t2")])
+    assert got[DANA].name == "Dana Chidi Okafor"
+
+
+def test_the_fuller_rule_is_a_proper_superset_only():
+    """An equal token set is a casing variant — first writer still holds."""
+    got = merge({}, [Name(DANA, "Dana Okafor", "quoted_header", "t1"),
+                     Name(DANA, "DANA OKAFOR", "quoted_header", "t2")])
+    assert got[DANA].name == "Dana Okafor"
+
+
+def test_a_fuller_form_does_not_beat_stronger_evidence():
+    got = merge({}, [Name(DANA, "Dana Okafor", "header", "t1"),
+                     Name(DANA, "Dana Chidi Okafor", "greeting", "t2")])
+    assert got[DANA].name == "Dana Okafor"
+
+
+def test_a_different_name_does_not_replace():
+    """Not a superset — two people, or a mistake. First holds either way."""
+    got = merge({}, [Name(DANA, "Dana Okafor", "quoted_header", "t1"),
+                     Name(DANA, "Ben Mercer", "quoted_header", "t2")])
+    assert got[DANA].name == "Dana Okafor"

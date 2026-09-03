@@ -701,11 +701,21 @@ def test_the_marks_carry_no_native_title_tooltips(tmp_path):
     assert "<title>" not in page.split("</head>")[1]
 
 
-def test_one_super_connector_is_a_person_not_people(tmp_path):
+def test_one_super_connector_takes_the_singular(tmp_path):
     """render_ring.py had this right; this renderer announced "1 people
-    account for half" on every page with a single super-connector."""
+    account for half" on every page with a single super-connector.
+
+    The noun is "introducer" rather than "person" — a recruiting inbox and an
+    intro bot both earn a place in this set on real data, and Bob cannot tell
+    them from a founder using `hello@` once the connector has stripped the
+    header that would settle it (HAP-319). The singular/plural bug this test
+    was written for is what it still guards.
+    """
     out = tmp_path / "n.html"
     render(G, out, principal="alice@examplecorp.com", intros=INTROS_G)
     page = out.read_text()
-    assert "1 person accounts for half" in page
-    assert "1 people account" not in page
+    assert "1 introducer accounts for half" in page
+    assert "1 introducers account" not in page
+    # The claim Bob cannot stand behind must not come back by another route.
+    assert "person accounts for half" not in page
+    assert "people account for half" not in page

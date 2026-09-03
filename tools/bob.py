@@ -329,7 +329,7 @@ def summary(graph, principal: str) -> str:
         # the concentration.
         total = (s.intros - s.made_by_you) or 1
         lines += ["", f"   {len(graph.super_connectors)} "
-                      f"{'person accounts' if len(graph.super_connectors) == 1 else 'people account'}"
+                      f"{'introducer accounts' if len(graph.super_connectors) == 1 else 'introducers account'}"
                       f" for {round(100 * share / total)}% of everyone",
                   "   you've been introduced to.", ""]
         label = {n.id: n.label for n in graph.nodes}

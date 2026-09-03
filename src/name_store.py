@@ -1,7 +1,7 @@
 """Who an address belongs to, and how strongly Bob knows it.
 
-The connector returns bare addresses — `dwhitfield@hey.com`, never
-`"Dana Whitfield" <dwhitfield@hey.com>` — in every format including RAW (verified
+The connector returns bare addresses — `dana.okafor@example.com`, never
+`"Dana Okafor" <dana.okafor@example.com>` — in every format including RAW (verified
 2026-09-02). So on that path `scan(names_out=...)` collects nothing and the
 roster labels everyone by email. A graph of local-parts is not a graph anyone
 recognises, and §5.3 is explicit that recognition is the whole moment.
@@ -18,7 +18,7 @@ between scans and quietly change the graph.
 | Evidence | Where it comes from | Trust |
 |---|---|---|
 | `header` | a real `From`/`To` display name (mbox path only) | the person's own spelling |
-| `quoted_header` | the attribution a mail client writes when quoting a reply — *"On Tue… Dana Whitfield <dwhitfield@hey.com> wrote:"* | a header one hop removed: the client copied it, name and address already paired |
+| `quoted_header` | the attribution a mail client writes when quoting a reply — *"On Tue… Dana Okafor <dana.okafor@example.com> wrote:"* | a header one hop removed: the client copied it, name and address already paired |
 | `signature` | a sign-off in an intro body — *"Cheers, Josh Brewer"* | strong; they wrote it |
 | `greeting` | an opener — *"Hi Karina and Rachel"* | first names only, and the pairing to an address is inferred |
 | `local_part` | `josh.brewer@` -> Josh Brewer | a guess, and wrong for handles |
@@ -46,7 +46,7 @@ COLUMNS = ("address", "name", "evidence", "thread_id")
 # otherwise silently outrank nothing and win by arriving first.
 PRECEDENCE: Sequence[str] = ("header", "quoted_header", "signature", "greeting")
 
-# "Dana Whitfield <dwhitfield@hey.com>" inside a quoted attribution. The name group is
+# "Dana Okafor <dana.okafor@example.com>" inside a quoted attribution. The name group is
 # greedy on purpose -- it swallows the whole "On Tue, Feb 6, 2024 at 11:42 AM"
 # prefix, which `_trim_to_name` then cuts back. Trying to anchor the start in
 # the pattern fails on the many date formats clients emit; trimming from the
@@ -95,7 +95,7 @@ def _is_name_word(w: str) -> bool:
         return False
     if w.lower().strip(".") in _STOP_WORDS:
         return False
-    # AM, PM, PST, UTC sit directly before the name in "at 11:42 AM Dana Whitfield"
+    # AM, PM, PST, UTC sit directly before the name in "at 11:42 AM Dana Okafor"
     # and would otherwise be absorbed into it. A real name part is rarely a
     # short all-caps token.
     return not (w.isupper() and len(w) <= 4)
@@ -123,6 +123,13 @@ def _clean(name: str) -> str:
     return (name or "").strip().strip('"\'').strip(" ,-–—:;").strip()
 
 
+# A dot glued directly to letters — ".com", ".io", ".net". A person's name uses
+# a dot only after an initial or an abbreviation, where a space or the end of
+# the string follows ("J. Smith", "Jr."), so this separates a domain from a name
+# without rejecting either of those.
+_DOMAINISH = re.compile(r"\.[A-Za-z]{2,}")
+
+
 def is_plausible(name: str) -> bool:
     """Reject the things that are obviously not a person's name.
 
@@ -137,13 +144,18 @@ def is_plausible(name: str) -> bool:
     n = _clean(name)
     if not n or "@" in n or len(n) > 60:
         return False
+    # A signature line often puts a website where a name would sit, and
+    # "AmyJacksonTalent.com" passes every other test here — letters, short,
+    # no address. It appeared on a real leaderboard as a person.
+    if _DOMAINISH.search(n):
+        return False
     if not any(c.isalpha() for c in n):
         return False
     return len(n.split()) <= 5
 
 
 def _trim_to_name(raw: str) -> str:
-    """"On Tue, Feb 6, 2024 at 11:42 AM Dana Whitfield" -> "Dana Whitfield".
+    """"On Tue, Feb 6, 2024 at 11:42 AM Dana Okafor" -> "Dana Okafor".
 
     Walks back from the bracket, keeping words that could be part of a name and
     stopping at the first that could not. That direction matters: the name is
@@ -166,7 +178,7 @@ def _trim_to_name(raw: str) -> str:
 def extract_quoted_names(body: str) -> list:
     """Names paired with addresses, lifted from quoted reply attributions.
 
-    *"On Tue, Feb 6, 2024 at 11:42 AM Dana Whitfield <dwhitfield@hey.com> wrote:"* is
+    *"On Tue, Feb 6, 2024 at 11:42 AM Dana Okafor <dana.okafor@example.com> wrote:"* is
     written by the replying client from the real `From` header, so it carries
     the two halves already paired. That makes it the best evidence available on
     the connector path, which strips display names everywhere (HAP-318) — and
@@ -197,6 +209,18 @@ def merge(existing: Mapping[str, Name], incoming: Iterable[Name]) -> dict:
     name differently would flip the label depending on which thread the scan
     happened to read last, and the graph would change between runs for no
     reason the user could see.
+
+    **One exception: a fuller form of the same name wins.** "Marcus Leyva Lee"
+    contains every token of "Marcus Leyva", so it is the same person written out
+    more completely rather than a competing spelling. This mirrors
+    `mail_source.best_name`, which already makes that call on header names, and
+    it does not reintroduce the instability the equal-evidence rule prevents:
+    a proper superset is decided by the names themselves, not by which thread
+    happened to be read first.
+
+    A person signing mail as "Marcus Leyva" while their full name is "Marcus Leyva
+    Reed" is ordinary, and the CRM holding a third form is ordinary too —
+    which is why Bob reports what the mail says and does not reconcile.
     """
     out = dict(existing)
     for n in incoming:
@@ -206,9 +230,23 @@ def merge(existing: Mapping[str, Name], incoming: Iterable[Name]) -> dict:
         if not n.address:
             continue
         prior = out.get(n.address)
-        if prior is None or n.rank < prior.rank:
+        if prior is None or n.rank < prior.rank or _is_fuller(n, prior):
             out[n.address] = n
     return out
+
+
+def _is_fuller(new: Name, prior: Name) -> bool:
+    """Same evidence, and every token of the prior name is in the new one.
+
+    A PROPER superset only — an equal token set is a casing or punctuation
+    variant, which the equal-evidence rule already settles in favour of
+    whichever arrived first.
+    """
+    if new.rank != prior.rank:
+        return False
+    a = {w.casefold() for w in prior.name.split()}
+    b = {w.casefold() for w in new.name.split()}
+    return bool(a) and a < b
 
 
 def read_names(path: Path) -> dict:

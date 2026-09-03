@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bob — see who connected you to whom</title>
-<meta name="description" content="Every introduction you have ever been part of is already sitting in your mailbox. Bob reads them out, shows you who your real connectors are, and helps you tell them what came of it. A free, open-source Claude Code plugin that runs on your own machine.">
+<meta name="description" content="Every introduction you have ever been part of is already sitting in your mailbox. Bob reads them out, shows you who your real connectors are, and helps you tell them what came of it. A free, open-source Claude Code plugin. Your network lives in files on your own machine.">
 <meta property="og:title" content="Bob — see who connected you to whom">
 <meta property="og:description" content="The introductions are already in your mail. Bob reads them out, shows you who your real connectors are, and helps you thank them.">
 <meta property="og:type" content="website">
@@ -432,7 +432,7 @@
       <div class="feat reveal"><div class="fic">🚪</div><div><h4>The ones that never landed</h4><p>Often the more useful list. A warm introduction going to waste is a door still open.</p></div></div>
       <div class="feat reveal"><div class="fic">🔗</div><div><h4>Every row is checkable</h4><p>Each introduction links back to the original thread, so you can verify any claim Bob makes rather than trust it.</p></div></div>
       <div class="feat reveal"><div class="fic">🗂️</div><div><h4>Airtable, if you want it</h4><p>Mirror what Bob found into your own base. One-way and additive — re-running never duplicates rows and never deletes anything.</p></div></div>
-      <div class="feat reveal"><div class="fic">✍️</div><div><h4>Drafts, never sends</h4><p>Notes land in your drafts and stay there. The credential Bob reads your mail with cannot send at all.</p></div></div>
+      <div class="feat reveal"><div class="fic">✍️</div><div><h4>Drafts, never sends</h4><p>Notes land in your drafts and stay there. Bob reads mail and writes drafts. Sending is yours.</p></div></div>
     </div>
   </div>
 </section>
@@ -479,8 +479,8 @@
   <div class="wrap">
     <div class="section-head reveal">
       <div class="kicker">Your data</div>
-      <h2>It stays on your computer</h2>
-      <p>Not as a policy you have to trust — as a fact about how it's built.</p>
+      <h2>Where your data actually goes</h2>
+      <p>Including the part that is not as simple as "it stays on your machine".</p>
     </div>
     <div class="data-grid">
       <div class="dg reveal">
@@ -490,13 +490,13 @@
       </div>
       <div class="dg reveal">
         <div class="dic">🔒</div>
-        <h4>Read-only, and yours</h4>
-        <p>Bob reads your mail with a credential you create and hold. It can't send, can't delete, and can't touch anything in your account that isn't mail.</p>
+        <h4>Read through your own Claude</h4>
+        <p>Bob holds no credential. It asks Claude to read your mail using the Gmail connector already on your account, so your mail passes through Anthropic's servers — access you have already granted, not a new one. That connector can also send and delete. Bob only ever reads and drafts.</p>
       </div>
       <div class="dg reveal">
         <div class="dic">🚫</div>
         <h4>Nowhere to phone home to</h4>
-        <p>There is no Bob server, no account, and no mechanism by which your data could reach anyone. Its author holds no credential of yours, because none exists to hold.</p>
+        <p>There is no Bob server and no Bob account. Its author holds no credential of yours, because none exists to hold — that part is structural, not a promise.</p>
       </div>
     </div>
     <p class="data-line reveal">Bob will tell you when it doesn't know something. A blank field means it didn't look, never that nothing happened.</p>
@@ -540,7 +540,7 @@
       </div>
       <p class="get-alt">Or from the Claude desktop app: the <b>Code</b> tab → <code>+</code> → <b>Plugins</b> → <b>Bob</b>. Then <code>/bob-setup</code> walks you through the rest.</p>
       <div class="get-cost">
-        <p><b>Bob is free and open source</b> (MIT). You need a paid Claude plan that includes Claude Code, which is how Bob is installed and run. There is no Bob subscription, no account to make, and nothing to pay its author.</p>
+        <p><b>Bob is free and open source</b> (MIT). You need a paid Claude plan that includes Claude Code, which is how Bob is installed and run, and the Gmail connector switched on for the mailbox you want read. There is no Bob subscription, no account to make, and nothing to pay its author.</p>
       </div>
       <div class="cta-row" style="margin-top:26px">
         <a href="https://github.com/rkroft/bob" class="btn btn-primary" target="_blank" rel="noopener">Source on GitHub →</a>
