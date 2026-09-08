@@ -719,3 +719,90 @@ def test_one_super_connector_takes_the_singular(tmp_path):
     # The claim Bob cannot stand behind must not come back by another route.
     assert "person accounts for half" not in page
     assert "people account for half" not in page
+
+
+# --------------------------------------------------------------------------
+# Counting people, not introduction events.
+#
+# A connector who puts you and four strangers on ONE thread has introduced you
+# to four people. Both the roster sentence and the leaderboard used to report
+# the number of intro EVENTS -- so that connector read "introduced you to 1
+# person", which is simply false, and sorted below someone who sent two 1:1
+# intros. Measured on the real corpus: 33 introductions carried 2+ people and
+# 29 of 175 introducers delivered more people than they did intro events.
+#
+# The ring already ranked by distinct people (ring_layout.RingEntry.count is
+# Node.people_given), so the leaderboard was also disagreeing with the ring
+# beside it on the same page.
+# --------------------------------------------------------------------------
+
+DOOR_PEOPLE = [
+    # One introduction, four people -- the shape this section is about.
+    Person("marcus@example.com", "Marcus Leyva", 1, 0,
+           ("alice@examplecorp.com", "ben@otherco.io",
+            "kai@example.com", "nadia@otherco.io"),
+           last_contact="2026-02-01"),
+    # More events, fewer people. Outranks Marcus on events, loses on people.
+    Person("dana@example.com", "Dana Okafor", 2, 0,
+           ("alice@examplecorp.com", "ben@otherco.io"),
+           last_contact="2026-01-20"),
+]
+
+DOOR_G = GraphData(
+    nodes=[Node("marcus@example.com", "Marcus Leyva", 1, 0, 4),
+           Node("dana@example.com", "Dana Okafor", 2, 0, 2)],
+    edges=[],
+    stats=Stats(3, 5, 2, 4, 0, "2019-03-14", "2026-02-01", 2),
+    # Deliberately in EVENT order, which is the order the old board kept.
+    top_connectors=[("dana@example.com", 2), ("marcus@example.com", 1)],
+)
+
+
+def _door_page(tmp_path):
+    out = tmp_path / "d.html"
+    render(DOOR_G, out, principal=PRINCIPAL, people=DOOR_PEOPLE, intros=INTROS)
+    return out.read_text()
+
+
+def test_one_introduction_carrying_four_people_is_counted_as_four(tmp_path):
+    """The roster sentence says "people", so it must count people."""
+    page = _door_page(tmp_path)
+    assert "introduced you to 4 people" in page
+    assert "introduced you to 1 person" not in page
+
+
+def test_the_roster_says_how_many_introductions_carried_those_people(tmp_path):
+    """4-people-in-1-introduction is a different act from four separate
+    introductions, and the difference is the whole point of the distinction."""
+    page = _door_page(tmp_path)
+    assert "introduced you to 4 people, in 1 introduction" in page
+
+
+def test_a_plain_connector_does_not_gain_a_redundant_clause(tmp_path):
+    """Two intros, two people -- nothing interesting to say, so say nothing.
+    The clause appears only where the two numbers actually differ."""
+    page = _door_page(tmp_path)
+    assert "introduced you to 2 people" in page
+    assert "introduced you to 2 people, in 2 introductions" not in page
+
+
+def _board_order(page):
+    """The board blob as rendered into the page script, in list order."""
+    blob = re.search(r"const board = (\[.*?\]);", page, re.S).group(1)
+    return [r["name"] for r in json.loads(blob)]
+
+
+def test_the_leaderboard_ranks_by_people_not_by_introduction_events(tmp_path):
+    """Marcus brought 4 people in 1 introduction; Dana brought 2 in 2. The
+    board is a list of who has helped you most, and Marcus helped more."""
+    assert _board_order(_door_page(tmp_path))[0] == "Marcus Leyva"
+
+
+def test_a_leaderboard_row_carries_both_counts(tmp_path):
+    """The row needs the event count too -- the tooltip distinguishes "4
+    people across 4 introductions" from "4 people in one"."""
+    page = _door_page(tmp_path)
+    blob = re.search(r"const board = (\[.*?\]);", page, re.S).group(1)
+    marcus = [r for r in json.loads(blob) if r["name"] == "Marcus Leyva"][0]
+    assert marcus["p"] == 4      # distinct people
+    assert marcus["n"] == 1      # introduction events

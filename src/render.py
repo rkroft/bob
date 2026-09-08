@@ -43,7 +43,7 @@ from timeline import arrival_columns, month_buckets, year_ticks
 # ring_pane() so it can sit in the ring's own grid, in normal flow above the
 # ring stage, instead of overlapping it as a `.card`-driven absolute overlay.
 _BOARD_HTML = ('<div id="board" class="card"><h2>Leaderboard</h2>'
-              '<div class="sub">introductions made for you</div><ol></ol></div>')
+              '<div class="sub">people they introduced you to</div><ol></ol></div>')
 
 INK, CREAM, CORAL, AMBER, MUTED = "#111b21", "#fffdfa", "#d65b3c", "#e6a94b", "#667781"
 # Red: an introduction made TO you. Green: one YOU made.
@@ -220,7 +220,12 @@ $ring_markup
     const li = document.createElement('li');
     li.dataset.id = r.id;                // shared key: lets the ring wire this row to its own node
     const b = document.createElement('b');
-    b.textContent = r.n;                 // textContent: names are attacker text
+    b.textContent = r.p;                 // people, not introduction events
+    // Both numbers, where they differ: "4 people, in 1 introduction" reads
+    // very differently from four separate favours, and the row has room for
+    // one number only.
+    b.title = r.p + (r.p === 1 ? ' person' : ' people')
+            + (r.p !== r.n ? ', in ' + r.n + (r.n === 1 ? ' introduction' : ' introductions') : '');
     li.textContent = r.name;
     li.appendChild(b);
     ol.appendChild(li);
@@ -548,8 +553,27 @@ def _roster_rows(graph, people, principal: str, label_of: dict) -> tuple:
         if p.address.lower() == principal:
             continue
         if p.intros_for_you:
+            # Count PEOPLE, not introduction events. `intros_for_you` counts
+            # events; `introduced_you_to` holds the distinct people. A
+            # connector who put the principal and four strangers on a single
+            # thread rendered as "introduced you to 1 person" -- the sentence
+            # says "people", so it has to count people. Measured on the real
+            # corpus: 33 introductions carried 2+ people, and 29 of 175
+            # introducers delivered more people than they did intro events.
+            #
+            # Falls back to the event count when the address list is missing,
+            # which is what an older people.csv has.
+            n_people = len(p.introduced_you_to) or p.intros_for_you
             how = "introduced you to %d %s" % (
-                p.intros_for_you, "person" if p.intros_for_you == 1 else "people")
+                n_people, "person" if n_people == 1 else "people")
+            if n_people != p.intros_for_you:
+                # Four people in one introduction is a different act from four
+                # separate introductions -- one is a door held open, the other
+                # is four favours. Said only where the two numbers differ;
+                # elsewhere it is noise.
+                how += ", in %d %s" % (
+                    p.intros_for_you,
+                    "introduction" if p.intros_for_you == 1 else "introductions")
         elif p.address in connector_of:
             who = connector_of[p.address]
             how = "%s introduced you" % label_of.get(who, who)
@@ -606,10 +630,20 @@ def render(
     # Ties break alphabetically: Counter.most_common leaves equal counts in
     # insertion order, so two people with one intro each moved around between
     # renders for no reason a reader could see.
-    board = [{"id": a, "name": label_of.get(a, a.partition("@")[0]), "n": n}
+    # `n` is introduction EVENTS, `p` is the distinct PEOPLE they brought.
+    # Ranked on people, because that is what the ring on the same page already
+    # ranks on (ring_layout.RingEntry.count is Node.people_given) and the two
+    # sitting side by side in different orders is a bug a reader cannot
+    # explain. Events break the tie, then name -- so a connector who brought
+    # three people across three introductions still leads one who brought
+    # three in a single message.
+    people_count = {(getattr(x, "address", "") or "").lower(): len(x.introduced_you_to)
+                    for x in (people or [])}
+    board = [{"id": a, "name": label_of.get(a, a.partition("@")[0]),
+              "n": n, "p": people_count.get(a.lower()) or n}
              for a, n in (graph.top_connectors or graph.super_connectors)
              if a not in hidden]
-    board.sort(key=lambda r: (-r["n"], r["name"].lower()))
+    board.sort(key=lambda r: (-r["p"], -r["n"], r["name"].lower()))
 
     rows = list(intros or [])
     buckets = month_buckets(rows)
