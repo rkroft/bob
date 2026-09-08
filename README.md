@@ -5,9 +5,9 @@ thank them.
 
 It is a [Claude Code](https://claude.com/claude-code) plugin. Bob has no
 server, no account, and no database — your network lives in two CSV files in
-a folder you choose. It reads your mail through the Gmail connector already
-on your Claude account, so there is no credential to create and none for Bob
-to hold.
+a folder you choose. It reads your mail with a read-only Google credential you
+create yourself and keep on your own machine. There is no shared application in
+the middle, so Bob's author has no way to reach your mail.
 
 **What it does, in full:** https://rkroft.github.io/bob/
 
@@ -50,17 +50,17 @@ stay the source of truth.
 `intros.csv`, `people.csv` and `network.html` are written to the folder you
 name at setup, and stay there.
 
-The reading is the part worth being precise about. Bob asks Claude to read
-your mail, through the Gmail connector on your own Claude account. Your mail
-passes through Anthropic's servers on the way to the model. That is access
-you already granted Claude — not a new grant, and not a credential Bob
-holds. There is no Bob server, no Bob account, and Bob's author holds
-nothing of yours.
+The reading is the part worth being precise about. Bob reads your mail with a
+read-only Google credential that you create, on your own Google account, and
+that never leaves your machine. Read-only is a scope, not a promise: sending
+and deleting were never granted. There is no Bob server, no Bob account, and
+no shared application in the middle.
 
-That connector can also send, label and trash mail. Bob does none of those:
-it reads, and it writes drafts. That is a rule Bob keeps, not a lock on the
-connector, and it is more honest to say so than to imply a limit that isn't
-there.
+Drafting is the exception, and it works differently. Drafts go through the
+Claude connector already on your account, so they pass through Anthropic's
+servers. That connector can also send, label and trash mail. Bob only ever
+writes drafts — there it is a rule Bob keeps rather than a limit the connector
+enforces, and it is more honest to say so than to imply otherwise.
 
 `/bob-table` is the one command that moves anything off your machine, and it
 says so before it runs.
@@ -77,13 +77,14 @@ python tools/bob.py graph --principal you@example.com
 ```
 
 `--mbox` takes a [Google Takeout](https://takeout.google.com) export and
-needs no credential, no connector and no install — the offline way to read
-the code and try Bob before granting it anything. The plugin's own path uses
-the Gmail connector instead, and needs neither the export nor `pip`.
+needs no credential and no install — the offline way to read the code and try
+Bob before granting it anything. The `--gmail` path reads your live mailbox
+instead, and needs the credential `tools/auth.py` walks you through plus the
+packages below.
 
 ```
-pip install -r requirements.txt   # only for the older --gmail path
-python -m pytest                  # 415 tests
+pip install -r requirements.txt   # for the --gmail path
+python -m pytest                  # 420 tests
 ```
 
 Every person in this repo's tests and examples is invented. That is a rule,

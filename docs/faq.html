@@ -217,7 +217,7 @@
           <p>Two lines in Claude Code:</p>
           <pre><code>/plugin marketplace add rkroft/bob
 /plugin install bob@bob</code></pre>
-          <p>Then <code>/bob-setup</code>, which asks two questions. You will also need the Gmail connector switched on for the mailbox you want read — that is how Bob reads your mail. The source is at <a href="https://github.com/rkroft/bob">github.com/rkroft/bob</a> — MIT licensed, and worth a look before you give any tool access to your mail.</p>
+          <p>Then <code>/bob-setup</code>, which walks you through your folder, your address, and a read-only Google credential you create yourself so Bob can read your mail. Budget ten minutes for that part. The source is at <a href="https://github.com/rkroft/bob">github.com/rkroft/bob</a> — MIT licensed, and worth a look before you give any tool access to your mail.</p>
           <p>Bob is early. The install works and the scan runs; the follow-up loop and the impact view are still being built.</p>
         </div>
       </section>
@@ -248,8 +248,8 @@
 
         <div class="qa">
           <h3>Do I need to be technical?</h3>
-          <p>No terminal, and no developer work. Setup asks two questions: which mailbox to read, and which folder to write to.</p>
-          <p>Bob reads your mail through the Gmail connector on your own Claude account. There is no credential to create, no package to install, and no shared application in the middle — Bob's author has no way to reach your mail.</p>
+          <p>A little, for now. Setup asks which mailbox to read and which folder to write to. Reading your Gmail directly also needs a read-only credential you create on your own Google account, which takes about ten minutes once, plus a few Python packages. Bob walks you through both.</p>
+          <p>It is a real piece of setup and worth knowing before you start. What you get for it is that there is no shared application in the middle, so Bob's author has no way to reach your mail. If you would rather not do any of it, read the next answer.</p>
         </div>
 
         <div class="qa">
@@ -294,7 +294,7 @@
         <div class="qa">
           <h3>Will it send anything on my behalf?</h3>
           <p>No. Drafts land in your Gmail drafts and stay there, and nothing leaves without you sending it.</p>
-          <p>Worth being exact: the Gmail connector Bob reads through <em>can</em> send. Bob does not, and no Bob command sends anything. That is a rule Bob keeps rather than something the connector makes impossible.</p>
+          <p>Worth being exact about which is which. The credential Bob reads your mail with is read-only, so sending is not something it could do. Drafting goes through your own Claude connector, and that one <em>can</em> send. Bob does not, and no Bob command sends anything. There it is a rule Bob keeps rather than a thing made impossible.</p>
         </div>
 
         <div class="qa">
@@ -347,14 +347,14 @@
 
         <div class="qa">
           <h3>Can Bob's author see any of it?</h3>
-          <p>No — and not as a policy you have to trust. There is no Bob server and no Bob account, and she holds no credential of yours because none exists to hold.</p>
-          <p>Your mail does pass through Anthropic's servers when Claude reads it, under the connector grant already on your account. That is between you and Anthropic, on terms you accepted before Bob existed. Bob's author is not in it.</p>
+          <p>No — and not as a policy you have to trust. There is no Bob server and no Bob account. The credential Bob reads with is one you created on your own Google account, and there is no shared application in the middle for her to hold anything through.</p>
+          <p>Your drafts do pass through Anthropic's servers, because drafting goes through the Claude connector already on your account. That is between you and Anthropic, on terms you accepted before Bob existed. Bob's author is not in it.</p>
         </div>
 
         <div class="qa">
           <h3>What exactly can it read?</h3>
-          <p>Your mail, through the Gmail connector on your Claude account. Bob holds no credential of its own.</p>
-          <p>That connector is not read-only — it can draft, label, send and trash. Bob reads and writes drafts, and does nothing else with it. If you use the export route instead, it reads a file and asks for nothing at all.</p>
+          <p>Your mail, through a read-only credential you create on your own Google account. It is scoped to mail and nothing else, and it stays on your machine.</p>
+          <p>Drafting is separate and goes through your Claude connector, which is <em>not</em> read-only — it can draft, label, send and trash. Bob writes drafts and does nothing else with it. If you use the export route instead, Bob reads a file and asks for nothing at all.</p>
         </div>
 
         <div class="qa">
