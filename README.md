@@ -84,7 +84,7 @@ packages below.
 
 ```
 pip install -r requirements.txt   # for the --gmail path
-python -m pytest                  # 420 tests
+python -m pytest                  # 542 tests
 ```
 
 Every person in this repo's tests and examples is invented. That is a rule,

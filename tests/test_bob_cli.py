@@ -497,3 +497,390 @@ def test_the_only_address_produces_no_noise(capsys):
             sys.modules.pop("gmail_source", None)
 
     assert "not read by this run" not in capsys.readouterr().out
+
+
+# --- preflight (HAP-312) ------------------------------------------------------
+
+def test_preflight_reports_and_exits_nonzero_when_durability_is_unproven(
+        tmp_path, capsys):
+    code = bob.main(["preflight", "--data-dir", str(tmp_path)])
+
+    out = capsys.readouterr().out
+    assert code != 0
+    assert "unknown" in out
+    assert "folder" in out.lower()
+
+
+def test_preflight_exits_zero_once_the_folder_is_confirmed(tmp_path, capsys):
+    assert bob.main(["confirm-folder", "--data-dir", str(tmp_path)]) == 0
+    capsys.readouterr()
+
+    assert bob.main(["preflight", "--data-dir", str(tmp_path)]) == 0
+    assert "durable" in capsys.readouterr().out
+
+
+def test_preflight_fails_on_a_missing_data_dir(tmp_path, capsys):
+    code = bob.main(["preflight", "--data-dir", str(tmp_path / "nope")])
+
+    assert code != 0
+    assert "does not exist" in capsys.readouterr().out
+
+
+def test_a_scan_stamps_the_marker_so_a_later_run_can_prove_durability(
+        tmp_path, monkeypatch):
+    """The scan is what leaves evidence behind. Without the stamp every run
+    looks like a first run and the automatic proof never arrives."""
+    from preflight import confirm_marker, read_marker
+
+    _mbox_with_one_intro(tmp_path)
+    confirm_marker(tmp_path)
+    bob.main(["scan", "--mbox", str(tmp_path / "All mail.mbox"),
+              "--principal", "alice.tran@examplecorp.com",
+              "--out", str(tmp_path / "intros.csv"),
+              "--people", str(tmp_path / "people.csv"),
+              "--data-dir", str(tmp_path)])
+
+    assert read_marker(tmp_path)["runs"] == 1
+
+
+def test_a_scan_without_a_data_dir_stamps_nothing(tmp_path):
+    """--data-dir is how the plugin passes the folder. The mbox path is also
+    run by hand without one, and that must not crash or invent a location."""
+    _mbox_with_one_intro(tmp_path)
+
+    assert bob.main(["scan", "--mbox", str(tmp_path / "All mail.mbox"),
+                     "--principal", "alice.tran@examplecorp.com",
+                     "--out", str(tmp_path / "intros.csv"),
+                     "--people", str(tmp_path / "people.csv")]) == 0
+
+
+def _mbox_with_one_intro(tmp_path):
+    import mailbox
+    from email.message import EmailMessage
+
+    m = EmailMessage()
+    m["From"] = "dana.okafor@example.com"
+    m["To"] = "alice.tran@examplecorp.com, ben.mercer@otherco.io"
+    m["Subject"] = "Intro: Alice <> Ben"
+    m["Date"] = "Tue, 03 Mar 2026 09:00:00 -0800"
+    m["X-GM-THRID"] = "1"
+    m.set_content("I'd like to introduce you two. Moving myself to bcc.")
+    box = mailbox.mbox(str(tmp_path / "All mail.mbox"), create=True)
+    box.add(m)
+    box.flush()
+    box.close()
+
+
+def test_preflight_exit_code_distinguishes_durability_from_a_real_failure(
+        tmp_path):
+    """The markdown has to branch on this. Asking the model to tell the two
+    apart by reading prose is the whole failure mode the ticket is about."""
+    assert bob.main(["preflight", "--data-dir", str(tmp_path)]) == 2
+    assert bob.main(["preflight", "--data-dir", str(tmp_path / "nope")]) == 1
+
+
+def test_scan_refuses_before_reading_mail_when_durability_is_unproven(
+        tmp_path, capsys):
+    """The code backstop. The prose gate is unreachable in a compacted context
+    or when someone pastes the "## Run it" block, and there was nothing behind
+    it."""
+    _mbox_with_one_intro(tmp_path)
+    code = bob.main(["scan", "--mbox", str(tmp_path / "All mail.mbox"),
+                     "--principal", "alice.tran@examplecorp.com",
+                     "--out", str(tmp_path / "intros.csv"),
+                     "--people", str(tmp_path / "people.csv"),
+                     "--data-dir", str(tmp_path)])
+
+    assert code != 0
+    assert not (tmp_path / "intros.csv").exists()
+    assert "folder" in capsys.readouterr().out.lower()
+
+
+def test_a_confirmed_folder_lets_the_scan_run(tmp_path):
+    from preflight import confirm_marker
+
+    _mbox_with_one_intro(tmp_path)
+    confirm_marker(tmp_path)
+
+    assert bob.main(["scan", "--mbox", str(tmp_path / "All mail.mbox"),
+                     "--principal", "alice.tran@examplecorp.com",
+                     "--out", str(tmp_path / "intros.csv"),
+                     "--people", str(tmp_path / "people.csv"),
+                     "--data-dir", str(tmp_path)]) == 0
+
+
+def test_allow_ephemeral_runs_the_scan_without_a_confirmation(tmp_path):
+    """The hand/mbox path, and the escape hatch for anyone who genuinely means
+    it. Explicit, so it cannot happen by accident."""
+    _mbox_with_one_intro(tmp_path)
+
+    assert bob.main(["scan", "--mbox", str(tmp_path / "All mail.mbox"),
+                     "--principal", "alice.tran@examplecorp.com",
+                     "--out", str(tmp_path / "intros.csv"),
+                     "--people", str(tmp_path / "people.csv"),
+                     "--data-dir", str(tmp_path),
+                     "--allow-ephemeral"]) == 0
+
+
+def test_a_stamp_failure_neither_crashes_the_scan_nor_hides_the_coverage_warning(
+        tmp_path, capsys, monkeypatch):
+    """The scan succeeded and both CSVs are on disk. A traceback here reads as
+    a failed scan and invites a re-run of several hundred threads — and the
+    stamp sat above the `capped` block, so its failure also swallowed the
+    "older mail was not read" disclosure."""
+    import preflight as pf
+
+    _mbox_with_one_intro(tmp_path)
+    pf.confirm_marker(tmp_path)
+    monkeypatch.setattr(
+        bob, "stamp_marker",
+        lambda *a, **k: (_ for _ in ()).throw(PermissionError("read-only")))
+
+    code = bob.main(["scan", "--mbox", str(tmp_path / "All mail.mbox"),
+                     "--principal", "alice.tran@examplecorp.com",
+                     "--out", str(tmp_path / "intros.csv"),
+                     "--people", str(tmp_path / "people.csv"),
+                     "--data-dir", str(tmp_path)])
+
+    assert code == 0
+    assert (tmp_path / "intros.csv").exists()
+    assert "could not record" in capsys.readouterr().out
+
+
+def test_output_paths_expand_a_literal_tilde(tmp_path, monkeypatch):
+    """`--out "$VAR/intros.csv"` with an unexpanded ~ would otherwise create a
+    literal `~` directory under the cwd. Expanding data_dir but not the output
+    is how the marker and the CSVs end up in different places."""
+    from preflight import confirm_marker
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _mbox_with_one_intro(tmp_path)
+    confirm_marker(tmp_path)
+
+    bob.main(["scan", "--mbox", str(tmp_path / "All mail.mbox"),
+              "--principal", "alice.tran@examplecorp.com",
+              "--data-dir", str(tmp_path),
+              "--out", "~/intros.csv", "--people", "~/people.csv"])
+
+    assert (tmp_path / "intros.csv").exists()
+    assert not Path("~").exists()
+
+
+def test_output_outside_the_confirmed_folder_is_called_out(tmp_path, capsys):
+    """The durability proof is only meaningful for the folder the CSVs are in.
+    Nothing forces --out to be inside --data-dir."""
+    from preflight import confirm_marker
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    confirmed = tmp_path / "confirmed"
+    confirmed.mkdir()
+    _mbox_with_one_intro(tmp_path)
+    confirm_marker(confirmed)
+
+    bob.main(["scan", "--mbox", str(tmp_path / "All mail.mbox"),
+              "--principal", "alice.tran@examplecorp.com",
+              "--data-dir", str(confirmed),
+              "--out", str(elsewhere / "intros.csv"),
+              "--people", str(elsewhere / "people.csv")])
+
+    assert "outside" in capsys.readouterr().out
+
+
+# --- coverage and blocked-vs-zero on the connector path (HAP-309, HAP-312) ---
+
+def _thread_line(tid="t1"):
+    import json
+    return json.dumps({
+        "id": tid,
+        "messages": [{
+            "id": "m1", "sender": "dana.okafor@example.com",
+            "toRecipients": ["alice.tran@examplecorp.com",
+                             "ben.mercer@otherco.io"],
+            "subject": "Intro: Alice <> Ben", "date": "2026-03-04T17:00:00Z",
+        }],
+    })
+
+
+def _connector_scan(tmp_path, *extra):
+    return bob.main(["scan", "--connector", str(tmp_path / "threads.jsonl"),
+                     "--principal", "alice.tran@examplecorp.com",
+                     "--out", str(tmp_path / "intros.csv"),
+                     "--people", str(tmp_path / "people.csv"), *extra])
+
+
+def test_an_empty_connector_file_is_blocked_not_zero_introductions(
+        tmp_path, capsys):
+    """The scan used to print `0 introductions` and exit 0 — a finding. An
+    empty scan file means retrieval wrote nothing, which is a failure."""
+    (tmp_path / "threads.jsonl").write_text("")
+
+    code = _connector_scan(tmp_path)
+
+    out = capsys.readouterr().out
+    assert code != 0
+    assert "0 introductions" not in out
+    assert not (tmp_path / "intros.csv").exists()
+
+
+def test_a_missing_connector_file_says_so_without_a_traceback(
+        tmp_path, capsys):
+    code = bob.main(["scan", "--connector", str(tmp_path / "absent.jsonl"),
+                     "--principal", "alice.tran@examplecorp.com",
+                     "--out", str(tmp_path / "intros.csv"),
+                     "--people", str(tmp_path / "people.csv")])
+
+    out = capsys.readouterr().out
+    assert code != 0
+    assert "absent.jsonl" in out
+    assert "Traceback" not in out
+
+
+def test_a_connector_scan_with_no_manifest_says_coverage_is_unknown(
+        tmp_path, capsys):
+    (tmp_path / "threads.jsonl").write_text(_thread_line() + "\n")
+
+    assert _connector_scan(tmp_path) == 0
+    assert "unknown" in capsys.readouterr().out.lower()
+
+
+def test_a_connector_scan_reports_a_complete_manifest(tmp_path, capsys):
+    """Complete means the WHOLE net ran to exhaustion. A manifest naming one
+    query is no longer enough — that was the over-claim the review caught."""
+    import json
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    from intro_detect import search_queries
+
+    (tmp_path / "threads.jsonl").write_text(_thread_line() + "\n")
+    (tmp_path / "coverage.json").write_text(json.dumps({"queries": [
+        {"query": q, "pages": 1, "threads": 1, "exhausted": True}
+        for q in search_queries()]}))
+
+    assert _connector_scan(tmp_path) == 0
+    out = capsys.readouterr().out
+    assert "every query ran to the end" in out.lower()
+    assert "did not run at all" not in out
+
+
+def test_a_connector_scan_names_an_unfinished_query(tmp_path, capsys):
+    import json
+    (tmp_path / "threads.jsonl").write_text(_thread_line() + "\n")
+    (tmp_path / "coverage.json").write_text(json.dumps({"queries": [
+        {"query": "subject:intro", "pages": 1, "threads": 1,
+         "exhausted": False}]}))
+
+    assert _connector_scan(tmp_path) == 0
+    assert "subject:intro" in capsys.readouterr().out
+
+
+def test_a_connector_scan_reports_skipped_lines(tmp_path, capsys):
+    (tmp_path / "threads.jsonl").write_text(
+        _thread_line() + "\n{half a page\n")
+
+    assert _connector_scan(tmp_path) == 0
+    assert "skipped" in capsys.readouterr().out.lower()
+
+
+def test_the_connector_path_does_not_estimate_a_reading_time(tmp_path, capsys):
+    """Retrieval already happened in the agent. "roughly 1 min" is a forecast
+    of work that is already done."""
+    (tmp_path / "threads.jsonl").write_text(_thread_line() + "\n")
+
+    _connector_scan(tmp_path)
+
+    assert "roughly" not in capsys.readouterr().out
+
+
+def test_an_explicit_coverage_path_is_honoured(tmp_path, capsys):
+    import json
+    (tmp_path / "threads.jsonl").write_text(_thread_line() + "\n")
+    elsewhere = tmp_path / "manifest.json"
+    elsewhere.write_text(json.dumps({"queries": [
+        {"query": "label:Bob", "pages": 1, "threads": 1, "exhausted": True}]}))
+
+    assert _connector_scan(tmp_path, "--coverage", str(elsewhere)) == 0
+    assert "label:Bob" not in capsys.readouterr().out  # complete: not named
+
+
+def test_a_scan_with_unknown_coverage_warns_that_the_result_is_partial(
+        tmp_path, capsys):
+    """The caveat the report itself must not carry: it only makes sense when
+    there is a result to qualify."""
+    (tmp_path / "threads.jsonl").write_text(_thread_line() + "\n")
+
+    _connector_scan(tmp_path)
+
+    assert "rather than all" in capsys.readouterr().out
+
+
+def test_a_blocked_scan_does_not_qualify_a_result_it_never_produced(
+        tmp_path, capsys):
+    (tmp_path / "threads.jsonl").write_text("")
+
+    _connector_scan(tmp_path)
+
+    assert "rather than all" not in capsys.readouterr().out
+
+
+def test_a_directory_passed_as_a_connector_file_is_reported_not_raised(
+        tmp_path, capsys):
+    code = bob.main(["scan", "--connector", str(tmp_path),
+                     "--principal", "alice.tran@examplecorp.com",
+                     "--out", str(tmp_path / "intros.csv"),
+                     "--people", str(tmp_path / "people.csv")])
+
+    assert code != 0
+    assert "Traceback" not in capsys.readouterr().out
+
+
+def test_a_missing_mbox_is_not_blamed_on_the_retrieval_step(tmp_path, capsys):
+    """MboxSource raises FileNotFoundError too. The connector wording sent an
+    mbox user to a retrieval step they never ran."""
+    code = bob.main(["scan", "--mbox", str(tmp_path / "absent.mbox"),
+                     "--principal", "alice.tran@examplecorp.com",
+                     "--out", str(tmp_path / "intros.csv"),
+                     "--people", str(tmp_path / "people.csv")])
+
+    out = capsys.readouterr().out
+    assert code != 0
+    assert "retrieval step" not in out
+
+
+def test_bob_queries_prints_the_net_one_per_line(capsys):
+    """The connector path needs the net it is measured against. Without this
+    the agent improvises a handful of searches and every run reports COMPLETE."""
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    from intro_detect import search_queries
+
+    assert bob.main(["queries"]) == 0
+    printed = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
+
+    assert printed == list(search_queries())
+
+
+def test_a_connector_scan_reports_searches_that_never_ran(tmp_path, capsys):
+    import json
+    (tmp_path / "threads.jsonl").write_text(_thread_line() + "\n")
+    (tmp_path / "coverage.json").write_text(json.dumps({"queries": [
+        {"query": "subject:intro", "pages": 1, "threads": 1,
+         "exhausted": True}]}))
+
+    assert _connector_scan(tmp_path) == 0
+    out = capsys.readouterr().out
+    assert "did not run at all" in out
+    assert "every query ran to the end" not in out.lower()
+
+
+def test_a_blocked_connector_scan_never_claims_complete_coverage(
+        tmp_path, capsys):
+    import json
+    (tmp_path / "threads.jsonl").write_text("")
+    (tmp_path / "coverage.json").write_text(json.dumps({"queries": [
+        {"query": "subject:intro", "pages": 3, "threads": 412,
+         "exhausted": True}]}))
+
+    _connector_scan(tmp_path)
+
+    assert "everything those queries can find" not in capsys.readouterr().out

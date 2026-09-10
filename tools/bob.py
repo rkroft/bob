@@ -23,6 +23,9 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
 from graph_model import build_graph  # noqa: E402
+from preflight import (  # noqa: E402
+    DURABLE, as_dir, confirm_marker, preflight, stamp_marker)
+from scan_coverage import Coverage, beside, read_coverage  # noqa: E402
 from intro_store import read_intros, write_intros  # noqa: E402
 from mail_source import best_name, normalize_addr  # noqa: E402
 from last_contact import last_direct_contact  # noqa: E402
@@ -229,17 +232,82 @@ def cmd_names_todo(args) -> int:
 
 
 def cmd_scan(args) -> int:
-    source, link_for = build_source(args)
+    # The backstop behind commands/bob-scan.md's step 0. The prose gate is
+    # unreachable in a compacted context, in a resumed session, or when someone
+    # pastes the "## Run it" block, and until this existed there was nothing
+    # behind it -- the entire enforcement was the model reading instructions.
+    if getattr(args, "data_dir", None) and not args.allow_ephemeral:
+        gate = preflight(args.data_dir, plugin_root=None)
+        if gate.durability != DURABLE:
+            print(gate.report())
+            return gate.exit_code
+        # The proof is about one folder. Nothing forces the output into it, and
+        # a confirmed data_dir vouching for CSVs written elsewhere is the same
+        # false assurance in a new shape.
+        confirmed = as_dir(args.data_dir).resolve()
+        for label, path in (("--out", args.out), ("--people", args.people)):
+            try:
+                as_dir(path).resolve().relative_to(confirmed)
+            except ValueError:
+                print(f"note: {label} is outside {confirmed}, the folder you "
+                      f"confirmed persists. Bob cannot vouch for where that "
+                      f"lands.")
+
+    try:
+        source, link_for = build_source(args)
+    except (OSError, UnicodeDecodeError) as exc:
+        # A bare traceback here reads as a crash in Bob rather than a file the
+        # user can go and look at. Gated on the source: MboxSource raises
+        # FileNotFoundError too, and the connector wording sent an mbox user to
+        # a retrieval step they never ran.
+        if args.connector:
+            print(f"Bob could not read the scan file: "
+                  f"{getattr(exc, 'filename', None) or exc}\n"
+                  f"Nothing was read. This file is written by the retrieval "
+                  f"step in /bob-scan; if that step did not run, there is "
+                  f"nothing here to analyse.")
+        else:
+            print(f"Bob could not read the mailbox: {exc}\nNothing was read.")
+        return 1
+
     seen_names: dict = {}
     capped: list = []
     contacted: set = set()
     automated: set = set()
+    coverage = Coverage()
     if isinstance(source, ConnectorSource):
-        # Retrieval already happened, in the agent. There is no net to run and
-        # nothing to cap, so the scan starts at adjudication -- and the count
-        # is known up front rather than estimated.
+        # Retrieval already happened, in the agent, so there is no net to run
+        # and no cap to hit. Coverage arrives as a manifest instead -- see
+        # scan_coverage: this source cannot know a denominator.
+        # The net is known code, so it is a legitimate denominator -- the
+        # mbox path already reports "N of 15 searches". Only the count of what
+        # EXISTS is unavailable on this path.
+        coverage = read_coverage(
+            args.coverage or beside(args.connector)).with_skipped(
+                source.skipped_lines).with_threads_in_file(
+                    source.threads_read).with_expected(list(search_queries()))
+        if source.blocked:
+            # `0 introductions` and `I could not look` must not be the same
+            # value. An empty or unparseable scan file means retrieval wrote
+            # nothing; reporting it as an empty mailbox would present a broken
+            # scan as a finished one, and the user would believe it.
+            print("Bob read nothing, so it has no result — this is not "
+                  "'no introductions found'.\n"
+                  f"The scan file held no usable threads"
+                  + (f" ({source.skipped_lines} unreadable "
+                     f"{'line' if source.skipped_lines == 1 else 'lines'})"
+                     if source.skipped_lines else " and was empty")
+                  + ".\nThe retrieval step in /bob-scan writes this file. Run "
+                    "it again before reading anything into the silence.")
+            print()
+            print(coverage.report())
+            return 1
         threads = source.all_threads()
-        _announce(len(threads))
+        # No time estimate: the reading already happened. "roughly N min" here
+        # would be a forecast of finished work.
+        print(f"adjudicating {len(threads):,} "
+              f"{'thread' if len(threads) == 1 else 'threads'} the retrieval "
+              f"step wrote", flush=True)
         rows = scan_threads(threads, source.principal(), link_for=link_for,
                             names_out=seen_names, contacted_out=contacted,
                             automated_out=automated)
@@ -255,12 +323,12 @@ def cmd_scan(args) -> int:
         found = as_lookup(read_names(Path(args.names)))
         names = {**found, **{a: n for a, n in names.items() if n}}
 
-    out = Path(args.out)
+    out = as_dir(args.out)
     write_intros(rows, out)
 
     # The roster is derived, so it is rebuilt from scratch every scan — unlike
     # intros.csv, which is a record of events and never rewritten.
-    people_path = Path(args.people)
+    people_path = as_dir(args.people)
     people = build_people(rows, source.principal(), names,
                           contacted=contacted, automated=automated)
     write_people(people, people_path)
@@ -288,6 +356,64 @@ def cmd_scan(args) -> int:
         for q in capped:
             print(f"     {q}")
         print("   Re-run with a higher --limit-net to go further back.")
+    if isinstance(source, ConnectorSource):
+        # The connector's answer to `capped`. Same rule, different mechanism:
+        # never let a bounded search pass for an exhaustive one.
+        print()
+        print(coverage.report())
+        if not coverage.complete and rows:
+            # Said here rather than in the report, because it qualifies a
+            # result -- and only if there is one to qualify.
+            print("   So treat these as some of your introductions rather "
+                  "than all of them.")
+    # Last, and never fatal. The scan has succeeded and both CSVs are on disk;
+    # a traceback here reads as a failed scan and invites re-reading several
+    # hundred threads. It also used to sit ABOVE the `capped` block, so a stamp
+    # failure swallowed the "older mail was not read" disclosure.
+    if getattr(args, "data_dir", None):
+        try:
+            stamp_marker(args.data_dir)
+        except (OSError, ValueError) as exc:
+            print(f"\nnote: the scan finished, but Bob could not record this "
+                  f"run in {as_dir(args.data_dir)}: {exc}")
+    return 0
+
+
+def cmd_queries(args) -> int:
+    """The retrieval net, one query per line.
+
+    The connector path needs this: the agent runs retrieval there, and without
+    the net in front of it it improvises a handful of searches — after which
+    every run reports complete coverage, measured against whatever it happened
+    to think of. See scan_coverage.Coverage.missing.
+    """
+    for q in search_queries():
+        print(q)
+    return 0
+
+
+def cmd_preflight(args) -> int:
+    """What Bob can prove before it reads anything.
+
+    Exit 1 = something is broken. Exit 2 = nothing is broken and durability is
+    unproven. Two codes rather than one so the command markdown branches on the
+    status rather than on its own reading of the prose.
+    """
+    result = preflight(args.data_dir, plugin_root=args.plugin_root)
+    print(result.report())
+    return result.exit_code
+
+
+def cmd_confirm_folder(args) -> int:
+    """Records the user's answer to the durability question. Only ever called
+    after they have actually been asked — see commands/bob-scan.md."""
+    try:
+        confirm_marker(args.data_dir)
+    except (OSError, ValueError) as exc:
+        print(f"Bob did not record that: {exc}")
+        return 1
+    print(f"Noted — {as_dir(args.data_dir)} is yours and persists. "
+          f"Bob won't ask again.")
     return 0
 
 
@@ -358,7 +484,7 @@ def cmd_roster(args) -> int:
     It is additive: it updates last_contact on the existing people.csv and
     touches nothing else, so a roster pass can never lose the scan's work.
     """
-    people_path = Path(args.people)
+    people_path = as_dir(args.people)
     people = read_people(people_path)
     if not people:
         print(f"No roster at {people_path}. Run `bob scan` first.")
@@ -453,13 +579,45 @@ def main(argv=None) -> int:
                    help="JSONL written by the agent from the Gmail connector")
     s.add_argument("--names", type=Path,
                    help="names.csv from a name pass (see `bob names-todo`)")
+    s.add_argument("--coverage", type=Path, default=None,
+                   help="coverage.json written by the retrieval step: which "
+                        "queries ran, pages each, which errored. Defaults to "
+                        "coverage.json beside the --connector file. Without "
+                        "it the scan reports coverage as unknown, never as "
+                        "complete")
     s.add_argument("--principal", help="the mailbox owner's address")
     s.add_argument("--out", type=Path, default=DEFAULT_OUT)
     s.add_argument("--people", type=Path, default=DEFAULT_PEOPLE)
     s.add_argument("--limit-net", type=int, default=None,
                    help="cap threads per search for a quick partial pass; "
                         "omitted means read the whole mailbox")
+    s.add_argument("--data-dir", type=Path,
+                   help="the user's Bob folder. Given, the scan refuses to "
+                        "read mail until the folder is confirmed to persist, "
+                        "and records the run once it has")
+    s.add_argument("--allow-ephemeral", action="store_true",
+                   help="scan even though the folder may be wiped when the "
+                        "session ends. For the mbox path and for anyone who "
+                        "means it; explicit so it cannot happen by accident")
     s.set_defaults(fn=cmd_scan)
+
+    q = sub.add_parser("queries",
+                       help="the retrieval net, one query per line — what the "
+                            "connector path must run to claim full coverage")
+    q.set_defaults(fn=cmd_queries)
+
+    p = sub.add_parser("preflight",
+                       help="what Bob can prove before it reads any mail")
+    p.add_argument("--data-dir", type=Path, required=True)
+    p.add_argument("--plugin-root", type=Path, default=None,
+                   help="where the plugin is installed, for the version check")
+    p.set_defaults(fn=cmd_preflight)
+
+    cf = sub.add_parser("confirm-folder",
+                        help="record that the user confirmed this folder "
+                             "persists — only after actually asking them")
+    cf.add_argument("--data-dir", type=Path, required=True)
+    cf.set_defaults(fn=cmd_confirm_folder)
 
     r = sub.add_parser("roster", help="fill in when you last spoke to each person")
     r.add_argument("--mbox", type=Path, help=".mbox file or a directory of them")

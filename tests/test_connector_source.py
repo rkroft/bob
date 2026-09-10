@@ -186,3 +186,157 @@ def test_principal_and_all_threads(tmp_path):
     src = ConnectorSource(PRINCIPAL, p)
     assert src.principal() == PRINCIPAL
     assert sorted(t.id for t in src.all_threads()) == ["t1", "t2"]
+
+
+# --- "I could not look" is not "there is nothing" (HAP-312, HAP-309) ---------
+#
+# granola-silence-is-not-evidence as a return type. Before this, an empty scan
+# file produced `0 introductions` and exit 0 -- a finding -- and a missing one
+# produced a bare FileNotFoundError traceback.
+
+def test_a_missing_scan_file_is_refused_by_name(tmp_path):
+    with pytest.raises(FileNotFoundError) as exc:
+        ConnectorSource(PRINCIPAL, tmp_path / "absent.jsonl")
+
+    assert "absent.jsonl" in str(exc.value)
+
+
+def test_an_empty_scan_file_is_blocked_not_zero(tmp_path):
+    path = tmp_path / "threads.jsonl"
+    path.write_text("")
+
+    source = ConnectorSource(PRINCIPAL, path)
+
+    assert source.blocked
+    assert source.threads_read == 0
+
+
+def test_a_file_of_only_malformed_lines_is_blocked(tmp_path):
+    """Nothing parsed, so nothing was read. Reporting 0 introductions here
+    would present a failed retrieval as an empty mailbox."""
+    path = tmp_path / "threads.jsonl"
+    path.write_text("{half a page\n{another\n")
+
+    source = ConnectorSource(PRINCIPAL, path)
+
+    assert source.blocked
+    assert source.skipped_lines == 2
+
+
+def test_one_good_thread_is_not_blocked(tmp_path):
+    path = tmp_path / "threads.jsonl"
+    path.write_text(json.dumps({
+        "id": "t1",
+        "messages": [_msg("m1", CONNECTOR, [ALICE, BEN], "Intro: Alice <> Ben")],
+    }) + "\n")
+
+    source = ConnectorSource(PRINCIPAL, path)
+
+    assert not source.blocked
+    assert source.threads_read == 1
+
+
+def test_skipped_lines_are_counted_alongside_good_ones(tmp_path):
+    """`read_jsonl`'s docstring: "The count of skipped lines is the caller's to
+    report; silence about them would be the failure this whole module is trying
+    to avoid." Until now nothing counted them."""
+    path = tmp_path / "threads.jsonl"
+    path.write_text(json.dumps({
+        "id": "t1",
+        "messages": [_msg("m1", CONNECTOR, [ALICE, BEN], "Intro")],
+    }) + "\n{truncated\n")
+
+    source = ConnectorSource(PRINCIPAL, path)
+
+    assert source.threads_read == 1
+    assert source.skipped_lines == 1
+    assert not source.blocked
+
+
+def test_a_thread_with_no_id_is_counted_as_skipped(tmp_path):
+    """`load` drops it -- it cannot be de-duplicated -- and a silent drop is
+    the thing this module's docstring warns about."""
+    path = tmp_path / "threads.jsonl"
+    path.write_text(json.dumps({"messages": []}) + "\n")
+
+    source = ConnectorSource(PRINCIPAL, path)
+
+    assert source.skipped_lines == 1
+    assert source.blocked
+
+
+def test_blank_lines_are_not_counted_as_skipped(tmp_path):
+    """A trailing newline is not a lost page."""
+    path = tmp_path / "threads.jsonl"
+    path.write_text(json.dumps({
+        "id": "t1",
+        "messages": [_msg("m1", CONNECTOR, [ALICE, BEN], "Intro")],
+    }) + "\n\n\n")
+
+    assert ConnectorSource(PRINCIPAL, path).skipped_lines == 0
+
+
+def test_counts_accumulate_across_several_files(tmp_path):
+    good = json.dumps({
+        "id": "t1",
+        "messages": [_msg("m1", CONNECTOR, [ALICE, BEN], "Intro")],
+    })
+    (tmp_path / "a.jsonl").write_text(good + "\n{bad\n")
+    (tmp_path / "b.jsonl").write_text(
+        good.replace('"t1"', '"t2"') + "\n{bad\n")
+
+    source = ConnectorSource(PRINCIPAL,
+                             [tmp_path / "a.jsonl", tmp_path / "b.jsonl"])
+
+    assert source.threads_read == 2
+    assert source.skipped_lines == 2
+
+
+def test_a_duplicate_thread_is_not_a_skipped_line(tmp_path):
+    """The net runs overlapping queries, so the same thread arrives several
+    times by design. De-duplication is not a loss."""
+    good = json.dumps({
+        "id": "t1",
+        "messages": [_msg("m1", CONNECTOR, [ALICE, BEN], "Intro")],
+    })
+    path = tmp_path / "threads.jsonl"
+    path.write_text(good + "\n" + good + "\n")
+
+    source = ConnectorSource(PRINCIPAL, path)
+
+    assert source.threads_read == 1
+    assert source.skipped_lines == 0
+
+
+# --- one bad line must not cost the file: the three remaining crash paths -----
+
+def test_a_valid_json_line_of_the_wrong_shape_is_counted_not_fatal(tmp_path):
+    """`[1,2]` parses as JSON and then blows up in thread_from_json. A page
+    half-written can just as easily be a half-written array as a broken
+    brace."""
+    path = tmp_path / "threads.jsonl"
+    path.write_text(json.dumps({
+        "id": "t1",
+        "messages": [_msg("m1", CONNECTOR, [ALICE, BEN], "Intro")],
+    }) + "\n[1,2]\n")
+
+    source = ConnectorSource(PRINCIPAL, path)
+
+    assert source.threads_read == 1
+    assert source.skipped_lines == 1
+
+
+def test_a_non_utf8_byte_is_counted_not_fatal(tmp_path):
+    """UnicodeDecodeError is a ValueError and was killing the whole scan
+    inside read_jsonl's own iteration."""
+    path = tmp_path / "threads.jsonl"
+    good = json.dumps({
+        "id": "t1",
+        "messages": [_msg("m1", CONNECTOR, [ALICE, BEN], "Intro")],
+    })
+    path.write_bytes(good.encode() + b"\n" + b'{"id": "t2", \xff\xfe}\n')
+
+    source = ConnectorSource(PRINCIPAL, path)
+
+    assert source.threads_read == 1
+    assert source.skipped_lines == 1

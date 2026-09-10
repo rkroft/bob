@@ -38,3 +38,10 @@ dumps/
 
 # subagent-driven-development scratch
 .superpowers/
+
+# Bob's own state in a data dir. A test calling confirm_marker(Path("")) wrote
+# one of these into the repo root on 2026-09-10 — the empty-$DATA_DIR route the
+# code review flagged. confirm_marker now refuses a relative path; this is the
+# backstop.
+.bob/
+.bob-probe-*

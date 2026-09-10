@@ -41,7 +41,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Iterator, Sequence
+from typing import Callable, Iterable, Iterator, Optional, Sequence
 
 from mail_source import Message, Thread
 
@@ -79,15 +79,24 @@ def thread_from_json(obj: dict) -> Thread:
     return Thread(id=obj.get("id", ""), messages=messages)
 
 
-def read_jsonl(path: Path) -> Iterator[dict]:
+def read_jsonl(path: Path, on_skip: "Optional[Callable[[str], None]]" = None
+               ) -> Iterator[dict]:
     """Yield one object per non-blank line, skipping malformed ones.
 
     A single truncated line — a page half-written when a scan was interrupted —
     must not cost the whole file. The count of skipped lines is the caller's to
     report; silence about them would be the failure this whole module is trying
-    to avoid.
+    to avoid. `on_skip` is called once per skipped line so a caller can honour
+    that; blank lines are not skips, they are just whitespace.
+
+    `on_skip` receives the raw line, which carries addresses and subjects — it
+    is fine for counting, but do not log it.
     """
-    with path.open(encoding="utf-8") as f:
+    # errors="replace" rather than strict: a half-written multi-byte character
+    # is the same interrupted-page failure as a broken brace, and it used to
+    # kill the whole scan from inside this loop. Mangled text then fails the
+    # JSON parse below and is COUNTED, which is the contract.
+    with Path(path).open(encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -95,25 +104,51 @@ def read_jsonl(path: Path) -> Iterator[dict]:
             try:
                 yield json.loads(line)
             except json.JSONDecodeError:
+                if on_skip:
+                    on_skip(line)
                 continue
 
 
-def load(paths: Sequence[Path] | Path) -> list[Thread]:
-    """Read one or more scan files into threads, de-duplicated by thread id.
+def load_counted(paths: Sequence[Path] | Path) -> tuple[list[Thread], int]:
+    """Threads plus the number of lines that could not be used.
 
     De-duplication is not optional. The retrieval net runs fifteen overlapping
     queries, so the same thread arrives from several of them; without this the
-    same introduction would be counted once per query that found it.
+    same introduction would be counted once per query that found it. A repeat
+    is therefore not a loss and is not counted as a skip.
+
+    An object with no thread id *is* counted: `load` has to drop it because it
+    cannot be de-duplicated, and a silent drop is exactly what this module's
+    docstring warns about.
     """
-    if isinstance(paths, Path):
+    if isinstance(paths, (str, Path)):
         paths = [paths]
     seen: dict[str, Thread] = {}
+    skipped = 0
+
+    def note(_line):
+        nonlocal skipped
+        skipped += 1
+
     for p in paths:
-        for obj in read_jsonl(p):
+        for obj in read_jsonl(Path(p), on_skip=note):
+            if not isinstance(obj, dict):
+                # Valid JSON of the wrong shape -- `[1,2]` parses and then
+                # blows up in thread_from_json.
+                skipped += 1
+                continue
             t = thread_from_json(obj)
-            if t.id and t.id not in seen:
+            if not t.id:
+                skipped += 1
+                continue
+            if t.id not in seen:
                 seen[t.id] = t
-    return list(seen.values())
+    return list(seen.values()), skipped
+
+
+def load(paths: Sequence[Path] | Path) -> list[Thread]:
+    """`load_counted` without the count, for callers that do not report it."""
+    return load_counted(paths)[0]
 
 
 class ConnectorSource:
@@ -127,7 +162,26 @@ class ConnectorSource:
 
     def __init__(self, principal: str, paths: Sequence[Path] | Path) -> None:
         self._principal = principal
-        self._threads = {t.id: t for t in load(paths)}
+        threads, skipped = load_counted(paths)
+        self._threads = {t.id: t for t in threads}
+        #: Lines that could not be used. Reported, never swallowed.
+        self.skipped_lines = skipped
+
+    @property
+    def threads_read(self) -> int:
+        return len(self._threads)
+
+    @property
+    def blocked(self) -> bool:
+        """Nothing usable came out of the file, so nothing was read.
+
+        This is the distinction HAP-312 asks for as a return type: `0
+        introductions` and `I could not look` must not be the same value. An
+        empty scan file means the agent's retrieval wrote nothing — a failure —
+        and reporting it as an empty mailbox would present a broken scan as a
+        finished one. `granola-silence-is-not-evidence`, in Python.
+        """
+        return not self._threads
 
     def principal(self) -> str:
         return self._principal
