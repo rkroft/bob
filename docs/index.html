@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bob — see who connected you to whom</title>
-<meta name="description" content="Every introduction you have ever been part of is already sitting in your mailbox. Bob reads them out, shows you who your real connectors are, and helps you tell them what came of it. A free, open-source Claude Code plugin. Your network lives in files on your own machine.">
+<meta name="description" content="Every introduction you have ever been part of is already sitting in your mailbox. Bob reads them out, shows you who your real connectors are, and helps you tell them what came of it. A free, open-source plugin for Claude Code and Cowork. Your network lives in files you own.">
 <meta property="og:title" content="Bob — see who connected you to whom">
 <meta property="og:description" content="The introductions are already in your mail. Bob reads them out, shows you who your real connectors are, and helps you thank them.">
 <meta property="og:type" content="website">
@@ -240,6 +240,12 @@
     font-weight:700;font-size:.78rem;cursor:pointer;transition:background .2s}
   .copy-btn:hover{background:rgba(255,255,255,.2)}
   .copy-btn.done{background:var(--sage);border-color:var(--sage);color:#fff}
+  .where-tabs{display:inline-flex;gap:4px;padding:4px;border-radius:999px;background:rgba(255,185,138,.22);margin-bottom:26px}
+  .where-tab{font-family:'Nunito';font-weight:800;font-size:.95rem;border:none;background:none;color:var(--ink-soft);
+    padding:9px 20px;border-radius:999px;cursor:pointer}
+  .where-tab.on{background:#fff;color:var(--coral-deep);box-shadow:0 4px 12px -6px rgba(120,60,40,.45)}
+  .get-steps[hidden]{display:none}
+  .cmd code.plain::before{content:none}
   .get-steps{list-style:none;text-align:left;display:grid;gap:22px}
   .get-steps li{display:flex;gap:18px;align-items:flex-start}
   .gs-no{flex-shrink:0;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
@@ -322,7 +328,7 @@
 <!-- HERO -->
 <header class="hero" id="top">
   <div class="wrap">
-    <span class="eyebrow">✦ Free &amp; open source · a Claude Code plugin</span>
+    <span class="eyebrow">✦ Free &amp; open source · for Claude Code &amp; Cowork</span>
     <h1>Someone opened a door for you. <em>Bob remembers who.</em></h1>
     <p class="lede">The introductions are already in your mailbox. Bob finds them, shows you who your real connectors are, and helps you thank them.</p>
     <div class="cta-row">
@@ -495,17 +501,17 @@
       <div class="dg reveal">
         <div class="dic">📁</div>
         <h4>A folder you pick</h4>
-        <p>Two spreadsheet files and a web page, on your own machine. Open them, edit them, back them up, or delete the folder and be done. If you use <code>/bob-table</code>, a copy also goes to your own Airtable base.</p>
+        <p>Two spreadsheet files and a web page, in a folder you own. Open them, edit them, back them up, or delete the folder and be done. If you use <code>/bob-table</code>, a copy also goes to your own Airtable base.</p>
       </div>
       <div class="dg reveal">
         <div class="dic">🔒</div>
-        <h4>A credential you make, and keep</h4>
-        <p>Bob reads your mail with a read-only Google credential you create yourself. It lives on your machine and it cannot send or delete, because the permission was never granted. Drafts are the one part that goes through your own Claude connector, so those pass through Anthropic's servers. Bob's author never holds either one.</p>
+        <h4>Your own mail connection</h4>
+        <p>Bob reads your mail through the Gmail connector already on your Claude account, so what it reads passes through Anthropic, as it would for anything you ask Claude about your mail. If you'd rather keep reading on your machine, you can make a read-only Google credential instead. Bob's author never holds either one.</p>
       </div>
       <div class="dg reveal">
         <div class="dic">🚫</div>
         <h4>Nowhere to phone home to</h4>
-        <p>There is no Bob server and no Bob account. The credential Bob reads with is one you made on your own Google project, so there is no shared application in the middle and no copy of it anywhere else.</p>
+        <p>There is no Bob server and no Bob account. Bob works through connections you made yourself, so there is no Bob application in the middle and no copy of your mail anywhere Bob's author can reach.</p>
       </div>
     </div>
     <p class="data-line reveal">Bob will tell you when it doesn't know something. A blank field means it didn't look, never that nothing happened.</p>
@@ -541,7 +547,11 @@
       <h2>Three steps, then it reads your mail</h2>
     </div>
     <div class="get-card reveal">
-      <ol class="get-steps">
+      <div class="where-tabs" role="tablist" aria-label="Where you use Claude">
+        <button type="button" role="tab" class="where-tab on" aria-selected="true" data-where="code">Claude Code</button>
+        <button type="button" role="tab" class="where-tab" aria-selected="false" data-where="cowork">Cowork</button>
+      </div>
+      <ol class="get-steps" data-panel="code">
         <li>
           <span class="gs-no">1</span>
           <div><h4>Open Claude Code</h4>
@@ -561,9 +571,26 @@
           <p>Bob walks you through the rest: your folder, your address, and access to your mail.</p></div>
         </li>
       </ol>
-      <p class="get-alt">Using Cowork? Bob doesn't run there yet. See the <a href="faq.html#setup">FAQ</a>.</p>
+      <ol class="get-steps" data-panel="cowork" hidden>
+        <li>
+          <span class="gs-no">1</span>
+          <div><h4>Add Bob's marketplace</h4>
+          <p>In Cowork's plugin settings, add a marketplace from GitHub with this address, then install <b>Bob</b> from it.</p>
+          <div class="cmd"><code class="plain">rkroft/bob</code><button class="cmd-copy" type="button" data-cmd="rkroft/bob">Copy</button></div></div>
+        </li>
+        <li>
+          <span class="gs-no">2</span>
+          <div><h4>Connect a folder and your Gmail</h4>
+          <p>Bob keeps your network in a <b>bob-network</b> folder inside the folder you connect, and reads your mail through your Gmail connector.</p></div>
+        </li>
+        <li>
+          <span class="gs-no">3</span>
+          <div><h4>Say “set up Bob”</h4>
+          <p>Or type <code>/bob-setup</code>. Bob takes it from there and draws your network when the scan is done.</p></div>
+        </li>
+      </ol>
       <div class="get-cost">
-        <p><b>Bob is free and open source</b> (MIT). You need a paid Claude plan that includes Claude Code, which is how Bob is installed and run, plus a read-only Google credential you make yourself so Bob can read your mail. There is no Bob subscription, no account to make, and nothing to pay its author.</p>
+        <p><b>Bob is free and open source</b> (MIT). You need a paid Claude plan with Claude Code or Cowork, which is where Bob runs, and your Gmail connected to Claude so Bob can read your mail. There is no Bob subscription, no account to make, and nothing to pay its author.</p>
       </div>
       <div class="cta-row" style="margin-top:26px">
         <a href="https://github.com/rkroft/bob" class="btn btn-primary" target="_blank" rel="noopener">Source on GitHub →</a>
@@ -630,6 +657,20 @@
         if (r.top < window.innerHeight) el.classList.add('in');
       });
     }, 400);
+  });
+
+  document.querySelectorAll('.where-tab').forEach(function(tab){
+    tab.addEventListener('click', function(){
+      var w = tab.dataset.where;
+      document.querySelectorAll('.where-tab').forEach(function(t){
+        var on = t === tab;
+        t.classList.toggle('on', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      document.querySelectorAll('.get-steps[data-panel]').forEach(function(p){
+        p.hidden = p.dataset.panel !== w;
+      });
+    });
   });
 
   document.querySelectorAll('.cmd-copy').forEach(function(btn){
