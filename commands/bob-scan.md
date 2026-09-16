@@ -3,6 +3,10 @@ name: bob-scan
 description: Read the mail, detect introductions both directions, write the table and open the graph.
 ---
 
+**Run the bob-start skill** unless you are already inside it — it finds
+`bob.py` and the folder (§1) and saves the address (§2), which every block
+below needs.
+
 Run the scan and end with the graph already open. Both happen in one command —
 with no server there is no second moment, so the first run carries the value.
 
@@ -36,7 +40,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/tools/bob.py" confirm-folder \
 ```
 
 On a no, or on "I'm not sure": **stop.** Tell them to connect a folder they own
-and run /bob-scan again. Do not offer to scan into the temporary one "just to
+and tell you when it is; then carry on from here. Do not offer to scan into the temporary one "just to
 see" — that is several hundred threads spent on output that gets deleted.
 
 **Never route around a failed preflight.** Do not read mail through the
@@ -59,22 +63,33 @@ that promise is a lie the pilot has no way to catch.
 
 ## Run it
 
-Paths and addresses come from the environment, not from text substitution:
-`$CLAUDE_PLUGIN_OPTION_DATA_DIR` and `$CLAUDE_PLUGIN_OPTION_PRINCIPAL` are
-exported to every process, and `${CLAUDE_PLUGIN_ROOT}` is where the plugin is
-installed. Never invoke `tools/bob.py` by a relative path — the working
-directory is the user's folder, not the plugin's.
+Choose the mail source before running anything — the list is just below the
+first command. On Cowork it is usually the connector, not `--gmail`.
+
+**Plugin settings may be empty.** In Claude Code `$CLAUDE_PLUGIN_OPTION_DATA_DIR`
+usually carries the folder; in Cowork it and `$CLAUDE_PLUGIN_OPTION_PRINCIPAL`
+are always empty, and `${CLAUDE_PLUGIN_ROOT}` may be too. Where they are empty,
+use the real folder (the one the user connected) and the `bob.py` path the
+bob-start skill finds, and leave `--principal` out — `bob setup` saved the
+address in the folder and every command reads it from there. Given
+`--data-dir`, `--out` and `--people` default into the folder too. Bob refuses
+an empty `--data-dir` rather than guessing. Never invoke `tools/bob.py` by a
+relative path — the working directory is the user's folder, not the plugin's.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/tools/bob.py" scan --gmail \
-  --principal "$CLAUDE_PLUGIN_OPTION_PRINCIPAL" \
-  --data-dir "$CLAUDE_PLUGIN_OPTION_DATA_DIR" \
-  --out "$CLAUDE_PLUGIN_OPTION_DATA_DIR/intros.csv" \
-  --people "$CLAUDE_PLUGIN_OPTION_DATA_DIR/people.csv"
+  --data-dir "$CLAUDE_PLUGIN_OPTION_DATA_DIR"
 ```
 
-Substitute `--mbox <path>` for `--gmail` when that is their source. If neither is
-configured, stop and run `/bob-setup` — do not report an empty scan as a result.
+**Pick the source first, in the same order /bob-setup does:**
+
+1. `~/.bob/google_token.json` exists → the `--gmail` command above.
+2. Otherwise, their Gmail connector is on hand → the connector path below. There
+   is no token on this path and that is expected, not a missing setup step.
+3. Otherwise, an .mbox they gave you → the command above with `--mbox <path>` in
+   place of `--gmail`.
+4. None of the three → go back to setup's one mail-source question
+   (`commands/bob-setup.md` §3). Do not report an empty scan as a result.
 
 ### On the connector path, you run the retrieval
 
@@ -138,10 +153,7 @@ Then hand it to Bob:
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/tools/bob.py" scan \
   --connector "$CLAUDE_PLUGIN_OPTION_DATA_DIR/threads.jsonl" \
-  --principal "$CLAUDE_PLUGIN_OPTION_PRINCIPAL" \
-  --data-dir "$CLAUDE_PLUGIN_OPTION_DATA_DIR" \
-  --out "$CLAUDE_PLUGIN_OPTION_DATA_DIR/intros.csv" \
-  --people "$CLAUDE_PLUGIN_OPTION_DATA_DIR/people.csv"
+  --data-dir "$CLAUDE_PLUGIN_OPTION_DATA_DIR"
 ```
 
 It finds `coverage.json` beside the threads file on its own. Without one it
@@ -162,10 +174,7 @@ Then render, without being asked:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/tools/bob.py" graph \
-  --principal "$CLAUDE_PLUGIN_OPTION_PRINCIPAL" \
-  --intros "$CLAUDE_PLUGIN_OPTION_DATA_DIR/intros.csv" \
-  --people "$CLAUDE_PLUGIN_OPTION_DATA_DIR/people.csv" \
-  --out "$CLAUDE_PLUGIN_OPTION_DATA_DIR/network.html"
+  --data-dir "$CLAUDE_PLUGIN_OPTION_DATA_DIR"
 ```
 
 **Do not open it yourself.** Hand them the path and let them click.
@@ -181,12 +190,8 @@ Say where it is, that it persists, and how to redraw it — none of which the us
 can otherwise know:
 
 > Your network is at **<data_dir>/network.html** — open it whenever you like.
->
-> It stays there — this is a folder you connected, so the file outlives the
-> session. Run /bob-graph to
-> redraw it from what Bob already has, in seconds, without touching your mail
-> again. The table behind it is intros.csv in the same folder, and it is yours
-> to keep, edit, or delete.
+> It's saved in your folder, and I can redraw it any time without reading your
+> mail again.
 
 Write the real resolved path, not the variable.
 
@@ -210,15 +215,21 @@ Two things are load-bearing:
 - **Never assert absence.** "I don't see a reply — did it go somewhere else?"
   and never "you never replied." Bob sees one channel.
 
-## Then offer the next step, and name it
+## Then ask what's next, in plain words
 
 The scan leaves `Last email` blank for everyone — filling it is a second pass
-over the mailbox, so it gets its own consent rather than being smuggled in here.
+over the mailbox, so it gets its own yes rather than being smuggled in here.
+Ask one question and let them answer in words; don't hand them commands to
+type. Offer only what can run here — bob-start §5 lists the conditions (the
+last-spoke pass needs a Gmail token or a mail export; the connector can't do it
+yet):
 
-> - /bob-roster — *fill in when you last spoke to each of these people.*
-> *This one walks the whole mailbox rather than the intro threads, so it is
-> slow — tens of minutes on a large account.*
-> - /bob-table — *put these in an Airtable base you can sort and filter*
-> - *or nothing — the graph is yours, and it'll be here*
+> What would you like next? I can fill in when you last spoke to each of these
+> people, put everything in an Airtable base you can sort and filter, or help
+> you thank the people who introduced you. Or nothing for now — your network
+> stays where it is.
+
+Then do what they pick: `commands/bob-roster.md`, the bob-table skill, or the
+bob-thanks skill.
 
 Doing nothing is a finished outcome. Do not chase it.

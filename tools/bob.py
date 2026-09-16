@@ -35,6 +35,7 @@ from render import render  # noqa: E402
 from intro_detect import search_queries  # noqa: E402
 from scan import scan, scan_threads  # noqa: E402
 from connector_source import ConnectorSource  # noqa: E402
+import bob_config  # noqa: E402
 from name_store import (  # noqa: E402
     Name, as_lookup, extract_quoted_names, merge, read_names, worklist,
     write_names)
@@ -269,6 +270,8 @@ def cmd_scan(args) -> int:
         else:
             print(f"Bob could not read the mailbox: {exc}\nNothing was read.")
         return 1
+
+    _remember_principal(args, source.principal())
 
     seen_names: dict = {}
     capped: list = []
@@ -550,6 +553,108 @@ def cmd_roster(args) -> int:
     return 0
 
 
+def cmd_setup(args) -> int:
+    """The only command that writes the address. Exit 2 = Bob still needs it,
+    so the caller asks rather than reading the prose."""
+    folder = args.data_dir
+    if args.gmail:
+        # The token is the authority on whose mailbox this is (see
+        # build_source), so the address comes from it, never from a guess.
+        try:
+            from gmail_source import GmailSource
+            token_address = GmailSource().principal()
+        except Exception as exc:  # no token, no packages, no network
+            print(f"Bob could not read the address from your Gmail token: "
+                  f"{exc}")
+            return 1
+        try:
+            before = bob_config.read_config(folder).get("principal")
+        except (OSError, ValueError):
+            before = None
+        if before and before.lower() != token_address.lower():
+            print(f"note: your Gmail token reads {token_address}, not "
+                  f"{before} — saving {token_address}.")
+        args.principal = token_address
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"Bob could not create {folder}: {exc}")
+        return 1
+    if not args.principal:
+        print(f"folder: {folder}\naddress: not set — Bob needs the email "
+              f"address whose mail it reads.")
+        return 2
+    if not bob_config.looks_like_address(args.principal):
+        print(f"{args.principal!r} isn't an email address. Bob needs the "
+              f"address whose mail it reads.")
+        return 1
+    try:
+        bob_config.save_principal(folder, args.principal)
+    except (OSError, ValueError) as exc:
+        print(f"Bob could not save your address in {folder}: {exc}")
+        return 1
+    print(f"folder: {folder}\naddress: {args.principal}")
+    return 0
+
+
+def _remember_principal(args, used: str) -> None:
+    """Keep bob.json on the mailbox actually read. A Gmail token decides whose
+    mail that is; a different saved address would make the graph draw a
+    different "you" from the one the scan found."""
+    folder = getattr(args, "data_dir", None)
+    if folder is None or not used:
+        return
+    try:
+        saved = bob_config.read_config(folder).get("principal")
+    except (OSError, ValueError):
+        return
+    # Nothing saved yet means the address came from a flag or the plugin
+    # setting; saving it here would freeze that setting against later edits.
+    if not isinstance(saved, str) or not saved.strip() \
+            or saved.strip().lower() == used.lower():
+        return
+    try:
+        bob_config.save_principal(folder, used)
+    except (OSError, ValueError):
+        return
+    print(f"note: this scan read {used}, not {saved} — saved {used} "
+          f"as your address.")
+
+
+def _resolve(args) -> None:
+    """Fill in what plugin settings would have, from the folder.
+
+    `--data-dir ""` is a failed substitution, not a request for the working
+    directory, so it falls back to the plugin setting and otherwise stops."""
+    folder = None
+    if hasattr(args, "data_dir"):
+        given = args.data_dir
+        folder = bob_config.data_dir(given)
+        if folder is None and given is not None:
+            raise SystemExit("No Bob folder given — the folder setting came "
+                             "through empty. Pass --data-dir with the real "
+                             "folder.")
+        args.data_dir = folder
+    if hasattr(args, "principal"):
+        args.principal = bob_config.principal(args.principal, folder)
+    if hasattr(args, "plugin_root") and args.plugin_root is not None \
+            and not str(args.plugin_root).strip():
+        # Same failed substitution as a blank folder: not the working dir.
+        args.plugin_root = None
+    graph = args.fn is cmd_graph
+    files = {"intros": ("intros.csv", DEFAULT_OUT),
+             "people": ("people.csv", DEFAULT_PEOPLE),
+             "out": ("network.html", DEFAULT_HTML) if graph
+             else ("intros.csv", DEFAULT_OUT)}
+    for name, (file, default) in files.items():
+        if hasattr(args, name) and getattr(args, name) is None:
+            setattr(args, name, folder / file if folder else default)
+    if getattr(args, "needs_principal", False) and not args.principal:
+        raise SystemExit("Bob doesn't know your email address yet. Run "
+                         "`bob setup --data-dir <folder> --principal <you>`, "
+                         "or pass --principal.")
+
+
 def cmd_graph(args) -> int:
     rows = read_intros(Path(args.intros))
     if not rows:
@@ -586,12 +691,12 @@ def main(argv=None) -> int:
                         "it the scan reports coverage as unknown, never as "
                         "complete")
     s.add_argument("--principal", help="the mailbox owner's address")
-    s.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    s.add_argument("--people", type=Path, default=DEFAULT_PEOPLE)
+    s.add_argument("--out", type=Path, default=None)
+    s.add_argument("--people", type=Path, default=None)
     s.add_argument("--limit-net", type=int, default=None,
                    help="cap threads per search for a quick partial pass; "
                         "omitted means read the whole mailbox")
-    s.add_argument("--data-dir", type=Path,
+    s.add_argument("--data-dir",
                    help="the user's Bob folder. Given, the scan refuses to "
                         "read mail until the folder is confirmed to persist, "
                         "and records the run once it has")
@@ -608,22 +713,24 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("preflight",
                        help="what Bob can prove before it reads any mail")
-    p.add_argument("--data-dir", type=Path, required=True)
-    p.add_argument("--plugin-root", type=Path, default=None,
+    p.add_argument("--data-dir", required=True)
+    p.add_argument("--plugin-root", default=None,
                    help="where the plugin is installed, for the version check")
     p.set_defaults(fn=cmd_preflight)
 
     cf = sub.add_parser("confirm-folder",
                         help="record that the user confirmed this folder "
                              "persists — only after actually asking them")
-    cf.add_argument("--data-dir", type=Path, required=True)
+    cf.add_argument("--data-dir", required=True)
     cf.set_defaults(fn=cmd_confirm_folder)
 
     r = sub.add_parser("roster", help="fill in when you last spoke to each person")
     r.add_argument("--mbox", type=Path, help=".mbox file or a directory of them")
     r.add_argument("--gmail", action="store_true", help="use the Gmail source")
     r.add_argument("--principal", help="the mailbox owner's address")
-    r.add_argument("--people", type=Path, default=DEFAULT_PEOPLE)
+    r.add_argument("--people", type=Path, default=None)
+    r.add_argument("--data-dir", help="the user's Bob folder; people.csv and "
+                   "the saved address are read from it")
     r.add_argument("--query", default="",
                    help="narrow the pass, e.g. 'newer_than:5y'. Empty reads "
                         "the whole mailbox.")
@@ -632,11 +739,22 @@ def main(argv=None) -> int:
     r.set_defaults(fn=cmd_roster)
 
     g = sub.add_parser("graph", help="read intros.csv, write network.html")
-    g.add_argument("--intros", type=Path, default=DEFAULT_OUT)
-    g.add_argument("--principal", required=True)
-    g.add_argument("--out", type=Path, default=DEFAULT_HTML)
-    g.add_argument("--people", type=Path, default=DEFAULT_PEOPLE)
-    g.set_defaults(fn=cmd_graph)
+    g.add_argument("--intros", type=Path, default=None)
+    g.add_argument("--principal",
+                   help="your address; omitted, the one saved by `bob setup`")
+    g.add_argument("--out", type=Path, default=None)
+    g.add_argument("--people", type=Path, default=None)
+    g.add_argument("--data-dir", help="the user's Bob folder; files and the "
+                   "saved address are read from it")
+    g.set_defaults(fn=cmd_graph, needs_principal=True)
+
+    su = sub.add_parser("setup", help="create the Bob folder and save your "
+                        "address in it, so later commands need neither")
+    su.add_argument("--data-dir", required=True)
+    su.add_argument("--principal", help="your address; saved in bob.json")
+    su.add_argument("--gmail", action="store_true",
+                    help="take the address from the Gmail token")
+    su.set_defaults(fn=cmd_setup)
 
     n = sub.add_parser("names-todo",
                        help="who still needs a name, and which threads to read")
@@ -664,6 +782,7 @@ def main(argv=None) -> int:
     ne.set_defaults(fn=cmd_names_extract)
 
     args = ap.parse_args(argv)
+    _resolve(args)
     return args.fn(args)
 
 

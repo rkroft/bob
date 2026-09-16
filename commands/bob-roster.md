@@ -3,6 +3,12 @@ name: bob-roster
 description: Fill in when you last spoke to each person — a second pass over the mailbox.
 ---
 
+**Finding Bob and the folder.** Plugin settings are empty in Cowork. Use the bob-start skill's §1 to find the `bob.py` path and the folder, and use those wherever this file names `${CLAUDE_PLUGIN_ROOT}` or `$CLAUDE_PLUGIN_OPTION_DATA_DIR`. The address is saved in the folder: leave `--principal` out.
+
+**Needs a Gmail token or a mail export.** There is no connector path for this
+pass yet. On the connector alone, say it isn't available here yet and stop —
+don't start it and let it fail.
+
 The scan writes everyone into `people.csv` but leaves `Last email` blank. Only
 this pass fills it, because last-contact is the one piece of the roster that has
 to look **beyond intro threads** — Bob asks the mailbox about each person on
@@ -13,8 +19,7 @@ yes rather than riding along with the scan.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/tools/bob.py" roster --gmail \
-  --principal "$CLAUDE_PLUGIN_OPTION_PRINCIPAL" \
-  --people "$CLAUDE_PLUGIN_OPTION_DATA_DIR/people.csv"
+  --data-dir "$CLAUDE_PLUGIN_OPTION_DATA_DIR"
 ```
 
 Use `--mbox <path>` instead of `--gmail` for a local export.
@@ -36,8 +41,5 @@ Afterwards, re-render so the roster shows it:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/tools/bob.py" graph \
-  --principal "$CLAUDE_PLUGIN_OPTION_PRINCIPAL" \
-  --intros "$CLAUDE_PLUGIN_OPTION_DATA_DIR/intros.csv" \
-  --people "$CLAUDE_PLUGIN_OPTION_DATA_DIR/people.csv" \
-  --out "$CLAUDE_PLUGIN_OPTION_DATA_DIR/network.html"
+  --data-dir "$CLAUDE_PLUGIN_OPTION_DATA_DIR"
 ```

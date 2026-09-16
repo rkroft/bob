@@ -8,6 +8,11 @@
 <meta property="og:title" content="Bob — see who connected you to whom">
 <meta property="og:description" content="The introductions are already in your mail. Bob reads them out, shows you who your real connectors are, and helps you thank them.">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://rkroft.github.io/bob/">
+<meta property="og:image" content="https://rkroft.github.io/bob/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="bob-avatar.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -153,6 +158,17 @@
   .step-no{position:absolute;top:22px;right:24px;font-family:'Fraunces',serif;font-size:2.4rem;
     color:rgba(214,91,60,.14);font-weight:600;line-height:1}
 
+  .plus{display:flex;gap:20px;align-items:flex-start;margin-top:24px;background:var(--card);
+    border-radius:22px;padding:26px 28px;box-shadow:var(--shadow);border:1px solid rgba(180,120,90,.1);
+    border-left:4px solid var(--sage)}
+  .plus-ic{width:52px;height:52px;flex-shrink:0;border-radius:15px;display:grid;place-items:center;
+    font-size:1.5rem;background:rgba(139,171,143,.22)}
+  .plus h3{font-size:1.32rem;margin-bottom:6px}
+  .plus p{color:var(--ink-soft);font-weight:500}
+  .plus code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86rem;
+    background:rgba(255,185,138,.24);color:var(--coral-deep);padding:2px 7px;border-radius:6px;font-weight:700}
+  @media(max-width:560px){.plus{flex-direction:column;gap:12px;padding:22px 20px}}
+
   /* ---------- chains ---------- */
   .chain-wrap{max-width:900px;margin:0 auto}
   .chain-fig{background:var(--card);border-radius:22px;padding:34px 30px;box-shadow:var(--shadow);
@@ -200,6 +216,7 @@
   .dg .dic{font-size:1.5rem;margin-bottom:12px}
   .dg h4{font-family:'Fraunces',serif;font-size:1.12rem;margin-bottom:7px;color:#fff;font-weight:600}
   .dg p{color:#e8d5cb;font-size:.95rem;font-weight:500}
+  .dg code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em;color:var(--peach)}
   .data-line{max-width:760px;margin:34px auto 0;text-align:center;
     font-family:'Fraunces',serif;font-style:italic;font-size:clamp(1.3rem,3vw,1.8rem);
     color:#fff;line-height:1.4;font-weight:400}
@@ -223,6 +240,36 @@
     font-weight:700;font-size:.78rem;cursor:pointer;transition:background .2s}
   .copy-btn:hover{background:rgba(255,255,255,.2)}
   .copy-btn.done{background:var(--sage);border-color:var(--sage);color:#fff}
+  .get-steps{list-style:none;text-align:left;display:grid;gap:22px}
+  .get-steps li{display:flex;gap:18px;align-items:flex-start}
+  .gs-no{flex-shrink:0;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--coral),var(--coral-deep));color:#fff;
+    font-family:'Fraunces',serif;font-weight:600;font-size:1.15rem;box-shadow:0 8px 16px -8px rgba(214,91,60,.7)}
+  .get-steps li>div{flex:1;min-width:0}
+  .get-steps h4{font-family:'Fraunces',serif;font-size:1.2rem;font-weight:600;margin:5px 0 4px}
+  .get-steps p{color:var(--ink-soft);font-weight:500;font-size:.98rem}
+  .cmd{display:flex;align-items:center;gap:10px;background:#33262c;border-radius:12px;
+    padding:10px 10px 10px 16px;margin:10px 0 0}
+  .cmd code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;background:none!important;
+    color:#f3e3d8!important;padding:4px 0!important;font-size:.92rem!important;font-weight:500!important}
+  .cmd code::before{content:"› ";color:var(--peach)}
+  .cmd-copy{flex-shrink:0;background:rgba(255,255,255,.1);color:#f3e3d8;border:1px solid rgba(255,255,255,.2);
+    border-radius:9px;padding:6px 12px;font-family:'Nunito';font-weight:700;font-size:.78rem;cursor:pointer}
+  .cmd-copy:hover{background:rgba(255,255,255,.2)}
+  .cmd-copy.done{background:var(--sage);border-color:var(--sage);color:#fff}
+  .get-steps .gs-note{margin-top:10px}
+  .get-steps,.get-steps li{min-width:0}
+  @media(max-width:560px){
+    .get-card{padding:28px 18px}
+    .get-steps li{gap:12px}
+    .gs-no{width:32px;height:32px;font-size:1rem}
+    .cmd code{font-size:.8rem!important}
+  }
+  .get-steps code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+    background:rgba(255,185,138,.24);color:var(--coral-deep);padding:2px 7px;border-radius:6px}
+  .gs-note{font-size:.9rem!important}
+  .gs-note code{white-space:nowrap}
+  .get-alt a{color:var(--coral-deep);font-weight:700}
   .get-alt{font-size:.95rem;color:var(--ink-soft);font-weight:600;margin-top:14px}
   .get-alt code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86rem;
     background:rgba(255,185,138,.24);color:var(--coral-deep);padding:2px 7px;border-radius:6px}
@@ -265,7 +312,6 @@
     <nav class="navlinks">
       <a href="#what">What it does</a>
       <a href="#chains">The chains</a>
-      <a href="#limits">What it can't do</a>
       <a href="#data">Your data</a>
       <a href="faq.html">FAQ</a>
       <a href="#get" class="nav-cta">Get Bob →</a>
@@ -294,6 +340,7 @@
       <div class="col-headers"><span style="left:4.1262%">the connector</span><span style="left:34.4660%">introduced you to</span><span style="left:70.8738%">who then introduced you to</span></div>
       <div class="bracket-wrap"><svg viewBox="0 0 824 278.0" role="img" aria-label="Dana Okafor introduced you to six people; one of them, Bill Reyes, went on to introduce you to four more."><path class="eb-onward" d="M386.0 61.0 L485.0 61.0 L485.0 22.0 L584.0 22.0"/><path class="eb-onward" d="M386.0 61.0 L485.0 61.0 L485.0 48.0 L584.0 48.0"/><path class="eb-onward" d="M386.0 61.0 L485.0 61.0 L485.0 74.0 L584.0 74.0"/><path class="eb-onward" d="M386.0 61.0 L485.0 61.0 L485.0 100.0 L584.0 100.0"/><path class="eb-kid" d="M34.0 158.5 L159.0 158.5 L159.0 61.0 L284.0 61.0"/><path class="eb-kid" d="M34.0 158.5 L159.0 158.5 L159.0 126.0 L284.0 126.0"/><path class="eb-kid" d="M34.0 158.5 L159.0 158.5 L159.0 152.0 L284.0 152.0"/><path class="eb-kid" d="M34.0 158.5 L159.0 158.5 L159.0 178.0 L284.0 178.0"/><path class="eb-kid" d="M34.0 158.5 L159.0 158.5 L159.0 204.0 L284.0 204.0"/><path class="eb-kid" d="M34.0 158.5 L159.0 158.5 L159.0 230.0 L284.0 230.0"/><circle class="bn-kid carried" cx="284.0" cy="61.0" r="9"/><circle class="bn-onward" cx="584.0" cy="22.0" r="6"/><circle class="bn-onward" cx="584.0" cy="48.0" r="6"/><circle class="bn-onward" cx="584.0" cy="74.0" r="6"/><circle class="bn-onward" cx="584.0" cy="100.0" r="6"/><circle class="bn-kid" cx="284.0" cy="126.0" r="7"/><circle class="bn-kid" cx="284.0" cy="152.0" r="7"/><circle class="bn-kid" cx="284.0" cy="178.0" r="7"/><circle class="bn-kid" cx="284.0" cy="204.0" r="7"/><circle class="bn-kid" cx="284.0" cy="230.0" r="7"/><circle class="bn-conn" cx="34.0" cy="158.5" r="19"/></svg><div class="bracket-labels"><span class="bl-kid carried" style="left:36.4078%;top:21.9424%">Bill Reyes</span><span class="bl-onward" style="left:72.5728%;top:7.9137%">Sandra Mwangi</span><span class="bl-onward" style="left:72.5728%;top:17.2662%">June Park</span><span class="bl-onward" style="left:72.5728%;top:26.6187%">Cara Nolan</span><span class="bl-onward" style="left:72.5728%;top:35.9712%">Theo Bright</span><span class="bl-kid" style="left:36.4078%;top:45.3237%">Marcus Lee</span><span class="bl-kid" style="left:36.4078%;top:54.6763%">Nina Alvarez</span><span class="bl-kid" style="left:36.4078%;top:64.0288%">Omar Haddad</span><span class="bl-kid" style="left:36.4078%;top:73.3813%">Priya Raman</span><span class="bl-kid" style="left:36.4078%;top:82.7338%">Terry Adeyemi</span><span class="bl-conn-name" style="left:7.2816%;top:49.4604%">Dana Okafor</span><span class="bl-conn-sub" style="left:7.2816%;top:63.8489%">6 people</span></div></div>
     </div>
+    <p class="chain-hint">← swipe to see who they introduced →</p>
     <p class="readout-cap">Nobody typed any of this in. It was already in the mail.</p>
   </div>
 </header>
@@ -303,12 +350,12 @@
   <div class="wrap whatgrid">
     <div class="reveal">
       <h2>Bob builds the <em class="accent">map</em></h2>
-      <p>You don't add contacts, tag anyone, or import a spreadsheet. Bob looks for one specific thing: introductions.</p>
-      <p>What comes back is a page of your own network. Every introduction Bob found, who made it, when, and a link back to the original thread for each one, so you can check any row rather than take its word for it. Why does this matter?</p>
+      <p>You don't add contacts, tag anyone, or import a spreadsheet. Bob looks for one specific thing: introductions, all the way back to the beginning of your inbox.</p>
+      <p>What comes back is a page of your own network. Every introduction Bob found, who made it, when, and a link back to the original thread for each one, so you can check any row rather than take its word for it.</p>
       <p class="pull">Introductions are social proof and goodwill. They are how a network grows, and how new opportunities find you.</p>
     </div>
     <div class="reveal stat-card">
-      <div class="stat"><b>338</b><span>introductions surfaced from a single six-year mailbox — none entered by hand</span></div>
+      <div class="stat"><b>338</b><span>introductions from one mailbox, read back to its very first email — none entered by hand</span></div>
       <div class="stat"><b>Zero</b><span>fields to fill in before you see anything</span></div>
       <div class="stat"><b>~20<span style="font-size:1rem"> min</span></b><span>for the first run, most of it waiting</span></div>
     </div>
@@ -321,6 +368,7 @@
     <div class="section-head reveal">
       <div class="kicker">How it goes</div>
       <h2>Find → See → Thank</h2>
+      <p>Plus an Airtable copy, if you want one.</p>
     </div>
     <div class="steps">
       <div class="card reveal">
@@ -342,6 +390,13 @@
         <p><code>/bob-thanks</code> asks what came of the introductions that took hold — a sentence each, or skip — then drafts the notes. Your sentence is the copy. Drafts only; nothing sends itself.</p>
       </div>
     </div>
+    <div class="plus reveal">
+      <div class="plus-ic">🗂️</div>
+      <div>
+        <h3>Plus: your network in Airtable</h3>
+        <p><code>/bob-table</code> writes every introduction and every person into your own Airtable base, ready to sort, filter and share. Run it again after a new scan and it updates the rows it already made instead of adding copies. It never deletes anything you typed.</p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -351,11 +406,11 @@
     <div class="section-head reveal">
       <div class="kicker">The part you can't see from an inbox</div>
       <h2>An introduction is worth what it <em class="accent">became</em></h2>
-      <p>Someone introduces you to one person, and that person goes on to introduce you to nine more. Bob follows the thread.</p>
+      <p>Someone introduces you to one person, and that person goes on to introduce you to four more. Bob follows the thread.</p>
     </div>
 
     <div class="chain-fig reveal">
-      <svg viewBox="0 0 720 200" role="img" aria-label="A chain: Dana introduced you to Marcus in January, Marcus introduced you to Priya in April, Priya introduced you to Terry in August.">
+      <svg viewBox="0 0 720 200" role="img" aria-label="A chain: Dana introduced you to Bill in January, Bill introduced you to Sandra in April, Sandra introduced you to Kai in August.">
         <defs>
           <linearGradient id="cg" gradientUnits="userSpaceOnUse" x1="90" y1="0" x2="618" y2="0">
             <stop offset="0%" stop-color="#ee7b5c"/><stop offset="100%" stop-color="#d65b3c"/>
@@ -373,11 +428,11 @@
           <circle cx="60" cy="86" r="30" fill="#fff" stroke="#d65b3c" stroke-width="2.5"/>
           <text x="60" y="91" text-anchor="middle" font-size="15" font-weight="800" fill="#3a2c2a">Dana</text>
           <circle cx="258" cy="86" r="30" fill="#fff" stroke="rgba(180,120,90,.4)" stroke-width="2"/>
-          <text x="258" y="91" text-anchor="middle" font-size="14" font-weight="700" fill="#3a2c2a">Marcus</text>
+          <text x="258" y="91" text-anchor="middle" font-size="15" font-weight="700" fill="#3a2c2a">Bill</text>
           <circle cx="450" cy="86" r="30" fill="#fff" stroke="rgba(180,120,90,.4)" stroke-width="2"/>
-          <text x="450" y="91" text-anchor="middle" font-size="15" font-weight="700" fill="#3a2c2a">Priya</text>
+          <text x="450" y="91" text-anchor="middle" font-size="14" font-weight="700" fill="#3a2c2a">Sandra</text>
           <circle cx="648" cy="86" r="30" fill="#f7ead9" stroke="#8bab8f" stroke-width="2.5"/>
-          <text x="648" y="91" text-anchor="middle" font-size="15" font-weight="800" fill="#3a2c2a">Terry</text>
+          <text x="648" y="91" text-anchor="middle" font-size="15" font-weight="800" fill="#3a2c2a">Kai</text>
 
           <text x="162" y="72" text-anchor="middle" font-size="11.5" font-weight="700" fill="#6b5651">introduced you to</text>
           <text x="354" y="72" text-anchor="middle" font-size="11.5" font-weight="700" fill="#6b5651">introduced you to</text>
@@ -404,7 +459,7 @@
       <div class="cr reveal">
         <div class="crk">Read backward</div>
         <h4>Where a person came from</h4>
-        <p><em>"You know Terry because Dana introduced you to Marcus, Marcus introduced you to Priya, and Priya introduced you to Terry."</em> The origin story of a relationship, reconstructed.</p>
+        <p><em>"You know Kai because Dana introduced you to Bill, Bill introduced you to Sandra, and Sandra introduced you to Kai."</em> The origin story of a relationship, reconstructed.</p>
       </div>
     </div>
   </div>
@@ -422,45 +477,8 @@
       <div class="feat reveal"><div class="fic">✅</div><div><h4>Did it take hold?</h4><p>Whether both people replied, whether anyone booked time. An introduction that happened isn't the same as one that landed.</p></div></div>
       <div class="feat reveal"><div class="fic">🚪</div><div><h4>The ones that never landed</h4><p>Often the more useful list. A warm introduction going to waste is a door still open.</p></div></div>
       <div class="feat reveal"><div class="fic">🔗</div><div><h4>Every row is checkable</h4><p>Each introduction links back to the original thread, so you can verify any claim Bob makes rather than trust it.</p></div></div>
-      <div class="feat reveal"><div class="fic">🗂️</div><div><h4>Airtable, if you want it</h4><p>Mirror what Bob found into your own base. One-way and additive — re-running never duplicates rows and never deletes anything.</p></div></div>
+      <div class="feat reveal"><div class="fic">🧑</div><div><h4>People, not mailers</h4><p>An address you have never written to that sends only automated mail is marked as a service, so the thank-you list is people.</p></div></div>
       <div class="feat reveal"><div class="fic">✍️</div><div><h4>Drafts, never sends</h4><p>Notes land in your drafts and stay there. Bob reads mail and writes drafts. Sending is yours.</p></div></div>
-    </div>
-  </div>
-</section>
-
-<!-- LIMITS -->
-<section id="limits" class="band">
-  <div class="wrap">
-    <div class="section-head reveal">
-      <div class="kicker">Worth reading before you decide</div>
-      <h2>What Bob <em class="accent">can't</em> do</h2>
-      <p>Some of these are choices and some are walls. Either way you should know them going in.</p>
-    </div>
-    <div class="limits">
-      <div class="lim wall reveal">
-        <h4>It can't tell you what came of an introduction you made</h4>
-        <p>Once you hand two people off to each other, they talk to each other and not to you. Your mailbox stops being evidence at that moment. Knowing more would mean going and asking them — a different feature, not built.</p>
-      </div>
-      <div class="lim wall reveal">
-        <h4>It only sees one channel</h4>
-        <p>Bob reads email. An introduction can land perfectly well over text, LinkedIn, or a phone call, and Bob will never know. So it asks <em>"did it go somewhere else?"</em> rather than telling you that you never replied.</p>
-      </div>
-      <div class="lim reveal">
-        <h4>It can't see introductions you weren't part of</h4>
-        <p>The chains follow only where every step touched your own mailbox. This is a picture of your network compounding, not a map of everyone's.</p>
-      </div>
-      <div class="lim reveal">
-        <h4>It doesn't use LinkedIn, and won't</h4>
-        <p>Automated LinkedIn access risks your account. That isn't a risk worth handing to anyone's tool, including this one.</p>
-      </div>
-      <div class="lim reveal">
-        <h4>It isn't a firm-wide tool</h4>
-        <p>Bob is built for one person and one mailbox, so everyone would run their own. A shared view where partners see each other's introductions is a genuinely interesting problem and an honest amount of work.</p>
-      </div>
-      <div class="lim reveal">
-        <h4>It's early</h4>
-        <p>Bob works and it has been run against a real six-year mailbox. But the people outside its author are only just arriving. Expect rough edges, and expect to be asked what broke.</p>
-      </div>
     </div>
   </div>
 </section>
@@ -477,7 +495,7 @@
       <div class="dg reveal">
         <div class="dic">📁</div>
         <h4>A folder you pick</h4>
-        <p>Two spreadsheet files and a web page, on your own machine. Open them, edit them, back them up, or delete the folder and be done.</p>
+        <p>Two spreadsheet files and a web page, on your own machine. Open them, edit them, back them up, or delete the folder and be done. If you use <code>/bob-table</code>, a copy also goes to your own Airtable base.</p>
       </div>
       <div class="dg reveal">
         <div class="dic">🔒</div>
@@ -487,7 +505,7 @@
       <div class="dg reveal">
         <div class="dic">🚫</div>
         <h4>Nowhere to phone home to</h4>
-        <p>There is no Bob server and no Bob account. The credential Bob reads with is one you made on your own Google project, so there is no shared application in the middle and no copy of it anywhere else. That part is structural, not a promise.</p>
+        <p>There is no Bob server and no Bob account. The credential Bob reads with is one you made on your own Google project, so there is no shared application in the middle and no copy of it anywhere else.</p>
       </div>
     </div>
     <p class="data-line reveal">Bob will tell you when it doesn't know something. A blank field means it didn't look, never that nothing happened.</p>
@@ -520,16 +538,30 @@
   <div class="wrap">
     <div class="section-head reveal">
       <div class="kicker">✦ Get Bob</div>
-      <h2>Two lines, then it reads your mail</h2>
+      <h2>Three steps, then it reads your mail</h2>
     </div>
     <div class="get-card reveal">
-      <div class="term">
-        <button class="copy-btn" id="copyBtn" type="button">Copy</button>
-        <div class="term-line"><span class="pr">›</span>/plugin marketplace add rkroft/bob</div>
-        <div class="term-line"><span class="pr">›</span>/plugin install bob@bob</div>
-        <div class="term-line"><span class="pr">›</span>/bob-setup</div>
-      </div>
-      <p class="get-alt">Or from the Claude desktop app: the <b>Code</b> tab → <code>+</code> → <b>Plugins</b> → <b>Bob</b>. Then <code>/bob-setup</code> walks you through the rest.</p>
+      <ol class="get-steps">
+        <li>
+          <span class="gs-no">1</span>
+          <div><h4>Open Claude Code</h4>
+          <p>In the Claude desktop app, click the <b>Code</b> tab. Or open Claude Code in a terminal. Both work.</p></div>
+        </li>
+        <li>
+          <span class="gs-no">2</span>
+          <div><h4>Add Bob, one line at a time</h4>
+          <p>Paste the first line into the message box and press Enter. When it finishes, do the same with the second.</p>
+          <div class="cmd"><code>/plugin marketplace add rkroft/bob</code><button class="cmd-copy" type="button" data-cmd="/plugin marketplace add rkroft/bob">Copy</button></div>
+          <div class="cmd"><code>/plugin install bob@bob</code><button class="cmd-copy" type="button" data-cmd="/plugin install bob@bob">Copy</button></div>
+          <p class="gs-note">If it says to reload, type <code>/reload-plugins</code>.</p></div>
+        </li>
+        <li>
+          <span class="gs-no">3</span>
+          <div><h4>Type <code>/bob-setup</code></h4>
+          <p>Bob walks you through the rest: your folder, your address, and access to your mail.</p></div>
+        </li>
+      </ol>
+      <p class="get-alt">Using Cowork? Bob doesn't run there yet. See the <a href="faq.html#setup">FAQ</a>.</p>
       <div class="get-cost">
         <p><b>Bob is free and open source</b> (MIT). You need a paid Claude plan that includes Claude Code, which is how Bob is installed and run, plus a read-only Google credential you make yourself so Bob can read your mail. There is no Bob subscription, no account to make, and nothing to pay its author.</p>
       </div>
@@ -600,15 +632,15 @@
     }, 400);
   });
 
-  var btn = document.getElementById('copyBtn');
-  btn.addEventListener('click', function(){
-    var cmds = '/plugin marketplace add rkroft/bob\n/plugin install bob@bob\n/bob-setup';
-    navigator.clipboard.writeText(cmds).then(function(){
-      btn.textContent = 'Copied';
-      btn.classList.add('done');
-      setTimeout(function(){ btn.textContent = 'Copy'; btn.classList.remove('done'); }, 2000);
-    }).catch(function(){
-      btn.textContent = 'Press ⌘C';
+  document.querySelectorAll('.cmd-copy').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      navigator.clipboard.writeText(btn.dataset.cmd).then(function(){
+        btn.textContent = 'Copied';
+        btn.classList.add('done');
+        setTimeout(function(){ btn.textContent = 'Copy'; btn.classList.remove('done'); }, 2000);
+      }).catch(function(){
+        btn.textContent = 'Press ⌘C';
+      });
     });
   });
 </script>

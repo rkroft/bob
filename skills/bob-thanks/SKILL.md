@@ -12,8 +12,8 @@ Never run this before a scan.
 
 ## 0. Check what you can actually see, before asking anything
 
-**Where the files are.** The user's folder is `$CLAUDE_PLUGIN_OPTION_DATA_DIR` —
-resolve every path from it and never write to the working directory. `intros.csv`,
+**Where the files are.** The user's folder is the one the bob-start skill's §1
+finds — resolve every path from it and never write to the working directory. `intros.csv`,
 `people.csv`, `outcomes.md` and `corrections.md` all live there. Writing a
 sentence about a named third party into whatever repo the user happened to have
 open is not an acceptable default.

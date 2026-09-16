@@ -14,8 +14,11 @@ the middle, so Bob's author has no way to reach your mail.
 ```
 /plugin marketplace add rkroft/bob
 /plugin install bob@bob
-/bob-setup
 ```
+
+Then ask Claude to **set up Bob**. It sets up your folder, reads your mail and
+draws your network in one go, and asks only what it can't work out. The slash
+commands below are there if you want them; you don't need them.
 
 ## What it does
 

@@ -15,8 +15,8 @@ agent cannot already reach.
 
 ## Before you write anything
 
-**Where the files are.** The user's folder is `$CLAUDE_PLUGIN_OPTION_DATA_DIR` —
-resolve every path from it and never write to the working directory. `intros.csv`,
+**Where the files are.** The user's folder is the one the bob-start skill's §1
+finds — resolve every path from it and never write to the working directory. `intros.csv`,
 `people.csv`, `outcomes.md` and `corrections.md` all live there. Writing a
 sentence about a named third party into whatever repo the user happened to have
 open is not an acceptable default.
@@ -27,7 +27,7 @@ open is not an acceptable default.
    available, say exactly that and stop. Do not report a skipped sync as a
    completed one.
 3. **Read both CSVs** from the user's data folder. If `intros.csv` is missing,
-   point at `/bob-scan`; do not create an empty base.
+   offer to find their introductions first; do not create an empty base.
 
 ## The schema
 

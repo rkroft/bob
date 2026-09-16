@@ -3,7 +3,11 @@ name: bob-setup
 description: Set up Bob — your folder, your addresses, and which mail source you can read.
 ---
 
-Set the user up so `/bob-scan` can run. Ask as little as possible and never ask
+**Run the bob-start skill.** It carries the user from here through the scan
+to their network, and follows the sections below. Everything here assumes you
+have its §1 (the `bob.py` path and the folder) in hand.
+
+Set the user up and carry straight on into the scan (§4). Ask as little as possible and never ask
 for something you can read.
 
 ## 0. Say what Bob is, before anything else
@@ -18,6 +22,15 @@ has just installed a plugin does not yet know what it is for. Open with it:
 >
 > Let's start by finding the introductions people have made for you.
 
+**The whole of what the user sees is three things:** that welcome, the check
+table, and the line saying the scan is starting — plus, only when needed, the two questions
+below (their address, if it can't be read; their mail source, if none works). Setup succeeds when they get from install
+to their first scan fast. Nothing else goes in — no warnings about re-scanning
+or overwriting files, no offers to back anything up, no notes on how Bob works
+inside, no list of gaps or bugs you noticed along the way (even if the user
+built Bob). If something is actually broken and blocks the scan, say what is
+broken and the one thing to do about it, in a sentence, and stop. Everything else can wait until they ask.
+
 Then check the setup. Two rules for everything after this point:
 
 - **Show the check as a table** — folder, address, mail source, scope. That table
@@ -31,61 +44,68 @@ Then check the setup. Two rules for everything after this point:
 
 ## 1. Their folder
 
-`${user_config.data_dir}` is where their network lives. Create it if it does not
-exist. Nothing personal ever goes in the plugin directory — plugin updates
-replace it wholesale.
+The folder from bob-start §1 (in Cowork, `bob-network` inside the folder they
+connected). Create it if it does not exist. Nothing personal
+ever goes in the plugin directory — plugin updates replace it wholesale.
 
-## 2. Their addresses
+## 2. Their address
 
-`${user_config.principal}` is how Bob tells an intro made *for* them from one
-*they* made. If it is empty, ask — this is the one question that has no default.
+How Bob tells an intro made *for* them from one *they* made. bob-start §2 reads
+it from the token or their sent mail and saves it with `bob setup`; ask only
+when neither works.
 
-## 3. Their mail source — say the truth about this
+## 3. Their mail source — pick one, don't compare them
 
-Bob reads mail one of two ways today. Check which is available and tell them
-plainly; do not guess and do not proceed as if mail is reachable when it is not.
+Take the first of these that actually works and put it in the table's
+mail-source row. Do not guess, and do not proceed as if mail is reachable when
+it is not. /bob-scan checks the same list in the same order — keep the two in
+step.
 
-**A local mailbox export** — `bob scan --mbox <path>`. Works immediately, no
-credentials. Google Takeout produces one.
+1. **A Gmail token already exists** (`~/.bob/google_token.json`). Row:
+   "Gmail (read-only token)". Fastest path; someone who set it up keeps it.
+2. **Their Gmail connector works.** The Gmail tools being listed is not enough —
+   make one cheap call (a one-result search) before writing the row. Row:
+   "Gmail (your connector)". This is the default in Cowork. If the address is
+   still empty, the connector can often tell you whose mailbox it is — use that
+   rather than asking.
+3. **Neither.** This is the one place setup asks a question. One sentence:
 
-**Gmail directly** — `bob scan --gmail`. Needs a read-only token, which
-`tools/auth.py` creates:
+   > Do you have a Google Takeout export (.mbox) of your mail? If not, I can
+   > walk you through a ten-minute read-only Gmail connection.
+
+   An .mbox → row "Mail export: <path>". The walkthrough → run it, below.
+
+**Do not narrate the trade-offs.** No speed estimates, no thread counts, no
+"names get filled in with an extra pass", no offer of an alternative source when
+one already works. The first Cowork run did exactly that and the goal of setup
+— get them to their introductions quickly — got lost in a paragraph of caveats
+they could not act on. If they ask how it works, answer then.
+
+### The Gmail walkthrough — only when they chose it
 
 ```bash
+python3 -c "import googleapiclient" 2>/dev/null \
+  || python3 -m pip install -r "${CLAUDE_PLUGIN_ROOT}/requirements.txt"
 python3 "${CLAUDE_PLUGIN_ROOT}/tools/auth.py"
 ```
 
 It walks them through making their own Google Cloud OAuth client (ten minutes,
 once, free), opens the consent screen, and writes `~/.bob/google_token.json` at
-0600. **Read-only and mail only** — Bob never sends from this credential;
-drafts go through their own Claude connector.
+0600 — read-only, mail only. Now that they have chosen it, tell them it is a
+real piece of setup, and why it is theirs to make: no shared OAuth application
+means nobody's mail is reachable by anyone but them.
 
-Say plainly that this is a real piece of setup and not two questions, before
-they start rather than after. And say why it is theirs to make rather than
-Bob's: no shared OAuth application means nobody's mail is reachable by anyone
-but them.
+## 4. Then go straight on
 
-The Gmail path also needs three Python packages that nothing installs for them:
-`google-api-python-client`, `google-auth`, `google-auth-oauthlib`. Check before
-promising anything:
+Don't end on "run /bob-scan" and wait. Say one line —
 
-```bash
-python3 -c "import googleapiclient" 2>/dev/null \
-  || echo "missing: python3 -m pip install -r \"${CLAUDE_PLUGIN_ROOT}/requirements.txt\""
-```
+> Reading your mail for introductions now — this part takes a while.
 
-The mbox path is standard library only — no install, no credentials.
+— and carry on with `commands/bob-scan.md` in the same turn. The user asked to
+be set up so they could see their introductions; stopping here makes them learn
+a command to get what they already asked for.
 
-Check for the token. If it is absent, offer the mbox path first, because it is
-the one that works this afternoon.
-
-## 4. Then hand off
-
-End by naming the next command, per the pipeline:
-
-> Next, run /bob-scan — I'll read your mail and draw what I find. Six years takes
-> about twenty minutes, most of it waiting.
-
+If you ever do name a slash command:
 **Write it as bare text — never in backticks or a fenced block.** A slash command
 is not a shell command. Formatted as code it renders with a run-in-terminal
 button, and the first real user clicked exactly that:

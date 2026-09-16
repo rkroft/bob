@@ -327,14 +327,25 @@ def test_every_path_argument_lands_inside_the_test_directory(tmp_path):
 
     assert parser is not None, "could not reach the parser"
     checked = 0
-    for action in parser._subparsers._group_actions[0].choices.values():
+    for name, action in parser._subparsers._group_actions[0].choices.items():
         for arg in action._actions:
+            if arg.type is not Path and not isinstance(arg.default, Path):
+                continue
             default = arg.default
+            if default is None and arg.dest in ("out", "intros", "people"):
+                # Output paths are filled in by `_resolve` at run time, from
+                # the folder or from the DEFAULT_ constants. Resolve one with
+                # no folder and check where it lands.
+                ns = argparse.Namespace(fn=action.get_default("fn"),
+                                        **{arg.dest: None})
+                bob._resolve(ns)
+                default = getattr(ns, arg.dest)
             if isinstance(default, Path):
                 checked += 1
                 assert str(default).startswith(str(tmp_path)), (
-                    f"{arg.option_strings} defaults to {default}, outside the "
-                    f"test directory — a test omitting it would write there"
+                    f"{name} {arg.option_strings} defaults to {default}, "
+                    f"outside the test directory — a test omitting it would "
+                    f"write there"
                 )
     assert checked >= 3, f"expected several Path defaults, found {checked}"
 
