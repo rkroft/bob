@@ -20,6 +20,7 @@ are on a mailing list, which is the failure this whole pass exists to prevent.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Iterable, Optional
 
 # A message addressed to more than this many people is an announcement, not a
@@ -44,6 +45,22 @@ def _counterparts(m, principal: str) -> list:
     if principal not in everyone:
         return []
     return [a for a in everyone if a and a != principal]
+
+
+# Machine senders, judged on the local part only. `intro_detect`'s list also
+# names vendors (hubspot, calendly, "sembly") as substrings, which is right for
+# rejecting a booking notice as an intro and wrong here: it made everyone who
+# works at those companies -- and a principal who does -- unreachable. The
+# machines those vendors run mail from these local parts anyway.
+_MACHINE_LOCAL = re.compile(
+    r"^(?:no-?reply|do-?not-?reply|notifications?|notify|mailer-daemon|"
+    r"postmaster|bounces?|alerts?|digest|newsletters?|automated)(?:[+._-].*)?@",
+    re.I)
+
+
+def is_automated(address: str) -> bool:
+    """True for an address no person writes from."""
+    return bool(_MACHINE_LOCAL.match(address or ""))
 
 
 # Threads per fetch call. Small enough that progress moves visibly and a
@@ -132,6 +149,19 @@ def last_direct_contact(source, principal: str,
 
     wanted = {a.lower() for a in addresses} if addresses is not None else None
 
+    # The connector path: the agent already asked about each person and wrote
+    # what came back, so there is nothing to search -- read the file whole.
+    if getattr(source, "pre_retrieved", False):
+        threads = source.all_threads()
+        if on_start:
+            on_start(len(threads), "threads")
+        out: dict = {}
+        for thread in threads:
+            _absorb(thread, principal, wanted, out)
+        if on_progress:
+            on_progress(len(threads), len(threads), out)
+        return out
+
     ids = list(source.search(query, limit=limit))
     if on_start:
         on_start(len(ids), "threads")
@@ -150,9 +180,15 @@ def _absorb(thread, principal, wanted, out) -> None:
     for m in thread.messages:
         if m.date is None or m.is_bulk or m.is_calendar_invite:
             continue
+        # A no-reply sender, a scheduler, a notetaker: nobody spoke. Needed
+        # most on the connector path, which carries no List-Unsubscribe
+        # header for `is_bulk` to catch.
+        if m.from_addr != principal and is_automated(m.from_addr):
+            continue
         others = _counterparts(m, principal)
         if not others or len(others) > DIRECT_MAX_RECIPIENTS:
             continue
+        others = [a for a in others if not is_automated(a)]
         day = m.date.date().isoformat()
         for addr in others:
             if wanted is not None and addr not in wanted:

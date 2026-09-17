@@ -235,3 +235,65 @@ def test_a_failing_search_costs_one_person_not_the_run():
     s = Broken([Thread(id="t1", messages=[msg(9, BEN, [ME])])])
     seen = last_direct_contact(s, ME, addresses={DANA, BEN})
     assert DANA not in seen and BEN in seen
+
+
+# --- HAP-356: connector path ------------------------------------------------
+
+def test_mail_from_an_automated_sender_is_not_contact():
+    """The 50-person connector batch counted a payroll support desk and a
+    retailer as 'found'. A no-reply sender never spoke to anyone."""
+    bot = "no-reply@otherco.io"
+    seen = last_direct_contact(src(msg(3, ME, [bot]), msg(9, bot, [ME])), ME)
+    assert bot not in seen
+
+
+def test_a_person_on_an_automated_message_gains_nothing_from_it():
+    """A scheduler mails both of you; that is not the two of you talking."""
+    seen = last_direct_contact(
+        src(msg(3, ME, [DANA]),
+            msg(9, "notifications@otherco.io", [ME, DANA])), ME)
+    assert seen[DANA].date == "2026-01-03"
+
+
+class FileSource:
+    """Shaped like ConnectorSource: everything already read, no search."""
+
+    pre_retrieved = True
+
+    def __init__(self, threads):
+        self._threads = list(threads)
+
+    def principal(self):
+        return ME
+
+    def search(self, query, limit=200):
+        raise NotImplementedError
+
+    def all_threads(self):
+        return list(self._threads)
+
+
+def test_a_source_that_cannot_search_is_read_whole():
+    source = FileSource([Thread(id="t1", messages=[msg(4, DANA, [ME])])])
+    seen = last_direct_contact(source, ME, addresses={DANA, BEN})
+    assert seen[DANA].date == "2026-01-04"
+    assert BEN not in seen
+
+
+def test_a_person_at_a_vendor_company_is_still_a_person():
+    """HARD_NEGATIVE_SENDERS matches substrings: dana@hubspot.com and
+    ben.assembly@example.com (\"sembly\") are people, not bots."""
+    for who in ("dana@hubspot.com", "ben.assembly@example.com", "kai.bouncehealth@otherco.io"):
+        seen = last_direct_contact(src(msg(9, who, [ME])), ME)
+        assert who in seen, who
+
+
+def test_a_principal_at_a_vendor_domain_still_has_contacts():
+    me = "alice@hubspot.com"
+    seen = last_direct_contact(src(msg(9, me, [DANA])), me)
+    assert DANA in seen
+
+
+def test_scheduler_mail_from_the_vendor_domain_is_not_contact():
+    bot = "notify@calendly.com"
+    assert bot not in last_direct_contact(src(msg(9, bot, [ME])), ME)

@@ -340,3 +340,92 @@ def test_a_non_utf8_byte_is_counted_not_fatal(tmp_path):
 
     assert source.threads_read == 1
     assert source.skipped_lines == 1
+
+
+# --- the same thread seen twice (HAP-356) ----------------------------------
+# `search_threads` shows only the NEWEST five messages of a thread; the agent
+# then fetches the whole thread with `get_thread` when the person it asked about
+# is not among them. Both objects land in the file under one id. Keeping the
+# first would throw away exactly the message the fetch was made for.
+
+def test_a_second_copy_of_a_thread_adds_its_missing_messages(tmp_path):
+    shown = _thread("t1", [_msg("m2", ALICE, [BEN], "re: plan",
+                                date="2026-03-05T17:00:00Z")])
+    full = _thread("t1", [
+        _msg("m1", ALICE, [CONNECTOR], "plan", date="2026-03-01T17:00:00Z"),
+        _msg("m2", ALICE, [BEN], "re: plan", date="2026-03-05T17:00:00Z"),
+    ])
+    (t,) = load(_write(tmp_path, "s.jsonl", [shown, full]))
+    assert [m.id for m in t.messages] == ["m1", "m2"]
+
+
+# --- per-person markers (HAP-356) -------------------------------------------
+# The roster pass asks about one person at a time. After each, the agent writes
+# `{"asked": address, "status": "ok" | "blocked"}` so Bob knows who is done (a
+# killed batch resumes) and who could not be looked at (never "no contact").
+
+def test_asked_markers_are_recorded_not_counted_as_skipped(tmp_path):
+    p = _write(tmp_path, "r.jsonl", [
+        {"asked": "Dana.Okafor@Example.com", "status": "ok"},
+        {"asked": BEN, "status": "blocked"},
+    ])
+    src = ConnectorSource(PRINCIPAL, p)
+    assert src.skipped_lines == 0
+    assert src.asked == {CONNECTOR, BEN}
+    assert src.could_not_look == {BEN}
+
+
+def test_a_later_ok_clears_an_earlier_blocked(tmp_path):
+    """A retried person must not stay 'could not look' forever."""
+    p = _write(tmp_path, "r.jsonl", [
+        {"asked": BEN, "status": "blocked"},
+        {"asked": BEN, "status": "ok"},
+    ])
+    assert ConnectorSource(PRINCIPAL, p).could_not_look == set()
+
+
+def test_markers_alone_are_not_a_blocked_file(tmp_path):
+    """Everyone asked, no threads found: an answer ('nothing visible'), not a
+    failed retrieval."""
+    p = _write(tmp_path, "r.jsonl", [{"asked": BEN, "status": "ok"}])
+    assert ConnectorSource(PRINCIPAL, p).blocked is False
+
+
+def test_any_status_but_ok_means_could_not_look(tmp_path):
+    """Fail closed: 'error', a typo, or no status at all is not a finished
+    lookup."""
+    p = _write(tmp_path, "r.jsonl", [
+        {"asked": BEN, "status": "error"},
+        {"asked": CONNECTOR},
+    ])
+    assert ConnectorSource(PRINCIPAL, p).could_not_look == {BEN, CONNECTOR}
+
+
+def test_failed_lookups_are_counted_per_person(tmp_path):
+    p = _write(tmp_path, "r.jsonl", [
+        {"asked": BEN, "status": "blocked"},
+        {"asked": BEN, "status": "blocked"},
+    ])
+    assert ConnectorSource(PRINCIPAL, p).failures == {BEN: 2}
+
+
+def test_messages_without_ids_still_merge(tmp_path):
+    shown = _thread("t1", [{"sender": ALICE, "toRecipients": [BEN],
+                            "date": "2026-03-05T17:00:00Z"}])
+    full = _thread("t1", [
+        {"sender": ALICE, "toRecipients": [CONNECTOR],
+         "date": "2026-03-01T17:00:00Z"},
+        {"sender": ALICE, "toRecipients": [BEN],
+         "date": "2026-03-05T17:00:00Z"},
+    ])
+    (t,) = load(_write(tmp_path, "s.jsonl", [shown, full]))
+    assert len(t.messages) == 2
+
+
+def test_a_date_without_a_zone_is_read_as_utc(tmp_path):
+    """Mixed naive and zoned dates in one thread used to crash the sort."""
+    t = thread_from_json(_thread("t1", [
+        _msg("m1", ALICE, [BEN], "a", date="2026-03-01T17:00:00"),
+        _msg("m2", ALICE, [BEN], "b", date="2026-03-02T17:00:00Z"),
+    ]))
+    assert [m.id for m in t.messages] == ["m1", "m2"]

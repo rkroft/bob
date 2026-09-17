@@ -39,11 +39,11 @@ dropped, deliberately.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Optional, Sequence
 
-from mail_source import Message, Thread
+from mail_source import Message, Thread, normalize_addr
 
 
 def _date(raw: str | None) -> datetime | None:
@@ -57,9 +57,12 @@ def _date(raw: str | None) -> datetime | None:
     if not raw:
         return None
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        d = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
+    # A zoneless date is read as UTC. Mixing naive and aware datetimes in one
+    # thread makes the chronological sort raise, which ended the whole run.
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
 def thread_from_json(obj: dict) -> Thread:
@@ -109,21 +112,41 @@ def read_jsonl(path: Path, on_skip: "Optional[Callable[[str], None]]" = None
                 continue
 
 
-def load_counted(paths: Sequence[Path] | Path) -> tuple[list[Thread], int]:
-    """Threads plus the number of lines that could not be used.
+def _key(m: Message) -> tuple:
+    """A message's identity: its id, or sender and date when it has none."""
+    return (m.id,) if m.id else ("", m.from_addr, m.date)
 
-    De-duplication is not optional. The retrieval net runs fifteen overlapping
-    queries, so the same thread arrives from several of them; without this the
-    same introduction would be counted once per query that found it. A repeat
-    is therefore not a loss and is not counted as a skip.
 
-    An object with no thread id *is* counted: `load` has to drop it because it
-    cannot be de-duplicated, and a silent drop is exactly what this module's
-    docstring warns about.
+def _merge(kept: Thread, extra: Thread) -> None:
+    """Add `extra`'s messages that `kept` lacks, by message id.
+
+    `search_threads` shows only the newest five messages of a thread, so the
+    agent fetches the whole thread when the person it asked about is not among
+    them, and both copies land in the file under one id. Keeping only the first
+    copy would drop exactly the message the fetch was made for.
+    """
+    have = {_key(m) for m in kept.messages}
+    added = [m for m in extra.messages if _key(m) not in have]
+    if added:
+        kept.messages.extend(added)
+        kept.__post_init__()          # re-sort; chronology is load-bearing
+
+
+def _load(paths: Sequence[Path] | Path) -> tuple[list[Thread], int, dict, dict]:
+    """Threads, the count of unusable lines, and the roster pass's markers.
+
+    A marker is `{"asked": address, "status": "ok" | "blocked"}`, written by the
+    agent after it has looked for one person. It is not a thread and not a
+    skipped line. The last marker for an address wins, so a retried person
+    does not stay blocked. Only the literal "ok" is a finished lookup: any
+    other status, or none, fails closed as blocked. Failures are also counted
+    per address, so a caller can stop retrying someone who always errors.
     """
     if isinstance(paths, (str, Path)):
         paths = [paths]
     seen: dict[str, Thread] = {}
+    asked: dict[str, str] = {}
+    failures: dict[str, int] = {}
     skipped = 0
 
     def note(_line):
@@ -137,13 +160,39 @@ def load_counted(paths: Sequence[Path] | Path) -> tuple[list[Thread], int]:
                 # blows up in thread_from_json.
                 skipped += 1
                 continue
+            if isinstance(obj.get("asked"), str) and obj["asked"].strip():
+                who = normalize_addr(obj["asked"])
+                ok = obj.get("status") == "ok"
+                asked[who] = "ok" if ok else "blocked"
+                if not ok:
+                    failures[who] = failures.get(who, 0) + 1
+                continue
             t = thread_from_json(obj)
             if not t.id:
                 skipped += 1
                 continue
-            if t.id not in seen:
+            if t.id in seen:
+                _merge(seen[t.id], t)
+            else:
                 seen[t.id] = t
-    return list(seen.values()), skipped
+    return list(seen.values()), skipped, asked, failures
+
+
+def load_counted(paths: Sequence[Path] | Path) -> tuple[list[Thread], int]:
+    """Threads plus the number of lines that could not be used.
+
+    De-duplication is not optional. The retrieval net runs fifteen overlapping
+    queries, so the same thread arrives from several of them; without this the
+    same introduction would be counted once per query that found it. A repeat
+    is therefore not a loss and is not counted as a skip -- its messages are
+    merged in (see `_merge`).
+
+    An object with no thread id *is* counted: `load` has to drop it because it
+    cannot be de-duplicated, and a silent drop is exactly what this module's
+    docstring warns about.
+    """
+    threads, skipped, _, _ = _load(paths)
+    return threads, skipped
 
 
 def load(paths: Sequence[Path] | Path) -> list[Thread]:
@@ -160,12 +209,21 @@ class ConnectorSource:
     empty list back.
     """
 
+    #: Retrieval already happened; readers take `all_threads()` whole.
+    pre_retrieved = True
+
     def __init__(self, principal: str, paths: Sequence[Path] | Path) -> None:
         self._principal = principal
-        threads, skipped = load_counted(paths)
+        threads, skipped, asked, failures = _load(paths)
         self._threads = {t.id: t for t in threads}
         #: Lines that could not be used. Reported, never swallowed.
         self.skipped_lines = skipped
+        #: Roster pass: everyone the agent has looked for, and the subset it
+        #: could not look at. "Could not look" is never "no contact".
+        self.asked = set(asked)
+        self.could_not_look = {a for a, st in asked.items() if st == "blocked"}
+        #: Failed lookups per address, across every file read.
+        self.failures = failures
 
     @property
     def threads_read(self) -> int:
@@ -181,7 +239,7 @@ class ConnectorSource:
         and reporting it as an empty mailbox would present a broken scan as a
         finished one. `granola-silence-is-not-evidence`, in Python.
         """
-        return not self._threads
+        return not self._threads and not self.asked
 
     def principal(self) -> str:
         return self._principal

@@ -895,3 +895,185 @@ def test_a_blocked_connector_scan_never_claims_complete_coverage(
     _connector_scan(tmp_path)
 
     assert "everything those queries can find" not in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# HAP-356: the roster on the Gmail connector
+#
+# Bob's Python cannot call the connector, so the pass splits: `roster-todo`
+# hands the agent the next batch of people, the agent searches each and writes
+# the threads plus an `asked` marker per person, and `roster --connector`
+# reads that file. Markers make a killed batch resumable and keep "could not
+# look" apart from "no contact".
+# --------------------------------------------------------------------------
+
+import json  # noqa: E402
+
+from people_store import Person, read_people, write_people  # noqa: E402
+
+DANA = "dana.okafor@example.com"
+BEN = "ben.mercer@otherco.io"
+KAI = "kai.rivera@example.com"
+
+
+def _roster(tmp_path, people):
+    path = tmp_path / "people.csv"
+    write_people(people, path)
+    return path
+
+
+def _connector_file(tmp_path, lines):
+    path = tmp_path / "roster-1.jsonl"
+    path.write_text("".join(json.dumps(x) + "\n" for x in lines),
+                    encoding="utf-8")
+    return path
+
+
+def _thread(tid, frm, to, date):
+    return {"id": tid, "messages": [{"id": tid + "m", "sender": frm,
+                                     "toRecipients": to, "date": date}]}
+
+
+def _roster_connector(tmp_path, people_path, *files):
+    return bob.main(["roster", "--connector", *map(str, files),
+                     "--principal", ME, "--people", str(people_path)])
+
+
+def test_roster_reads_a_connector_file(tmp_path):
+    people = _roster(tmp_path, [Person(DANA, "Dana Okafor")])
+    f = _connector_file(tmp_path, [
+        _thread("t1", DANA, [ME], "2026-06-15T16:00:00Z"),
+        {"asked": DANA, "status": "ok"},
+    ])
+    assert _roster_connector(tmp_path, people, f) == 0
+    assert read_people(people)[0].last_contact == "2026-06-15"
+
+
+def test_an_empty_connector_file_changes_nothing_and_fails(tmp_path, capsys):
+    """Nothing written means the agent's retrieval failed, not that nobody
+    was ever spoken to."""
+    people = _roster(tmp_path, [Person(DANA, "Dana Okafor",
+                                       last_contact="2025-01-01")])
+    f = _connector_file(tmp_path, [])
+    assert _roster_connector(tmp_path, people, f) != 0
+    assert read_people(people)[0].last_contact == "2025-01-01"
+    assert "could not" in capsys.readouterr().out.lower()
+
+
+def test_a_roster_pass_never_moves_a_date_backwards(tmp_path):
+    """The connector looks at a person's newest thread or three, and its
+    thread order is not reliable. An older date than the one on file means it
+    saw less, not that the later conversation un-happened."""
+    people = _roster(tmp_path, [Person(DANA, "Dana Okafor",
+                                       last_contact="2026-08-01")])
+    f = _connector_file(tmp_path, [
+        _thread("t1", DANA, [ME], "2026-06-15T16:00:00Z"),
+        {"asked": DANA, "status": "ok"},
+    ])
+    _roster_connector(tmp_path, people, f)
+    assert read_people(people)[0].last_contact == "2026-08-01"
+
+
+def test_people_the_agent_could_not_look_at_are_reported(tmp_path, capsys):
+    people = _roster(tmp_path, [Person(DANA, "Dana Okafor"),
+                                Person(BEN, "Ben Mercer")])
+    f = _connector_file(tmp_path, [
+        _thread("t1", DANA, [ME], "2026-06-15T16:00:00Z"),
+        {"asked": DANA, "status": "ok"},
+        {"asked": BEN, "status": "blocked"},
+    ])
+    _roster_connector(tmp_path, people, f)
+    out = capsys.readouterr().out
+    assert re.search(r"\b1\b[^\n]*could not be looked up", out)
+
+
+def _todo(tmp_path, people_path, *extra):
+    return bob.main(["roster-todo", "--principal", ME,
+                     "--people", str(people_path), *extra])
+
+
+def test_roster_todo_lists_people_not_yet_asked(tmp_path, capsys):
+    people = _roster(tmp_path, [
+        Person(DANA, "Dana Okafor"), Person(BEN, "Ben Mercer"),
+        Person(KAI, "Kai Rivera"),
+        Person("support@otherco.io", "", is_service=True),
+        Person(ME, "Alice Tran"),
+    ])
+    f = _connector_file(tmp_path, [{"asked": DANA, "status": "ok"}])
+    assert _todo(tmp_path, people, "--connector", str(f), "--batch", "1") == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["batch"] == [BEN]
+    assert out["remaining"] == 2          # Ben and Kai; Dana is done
+
+
+def test_roster_todo_retries_people_it_could_not_look_at(tmp_path, capsys):
+    people = _roster(tmp_path, [Person(BEN, "Ben Mercer")])
+    f = _connector_file(tmp_path, [{"asked": BEN, "status": "blocked"}])
+    _todo(tmp_path, people, "--connector", str(f))
+    assert json.loads(capsys.readouterr().out)["batch"] == [BEN]
+
+
+def test_roster_todo_with_no_file_yet_starts_from_the_top(tmp_path, capsys):
+    people = _roster(tmp_path, [Person(DANA, "Dana Okafor")])
+    _todo(tmp_path, people, "--connector", str(tmp_path / "roster-1.jsonl"))
+    assert json.loads(capsys.readouterr().out)["batch"] == [DANA]
+
+
+def test_roster_todo_gives_up_on_someone_who_fails_twice(tmp_path, capsys):
+    """Otherwise one address that always errors keeps the loop going
+    forever."""
+    people = _roster(tmp_path, [Person(BEN, "Ben Mercer")])
+    f = _connector_file(tmp_path, [{"asked": BEN, "status": "blocked"},
+                                   {"asked": BEN, "status": "blocked"}])
+    _todo(tmp_path, people, "--connector", str(f))
+    out = json.loads(capsys.readouterr().out)
+    assert out["batch"] == []
+    assert out["gave_up"] == [BEN]
+
+
+def test_roster_todo_skips_addresses_bob_would_ignore(tmp_path, capsys):
+    people = _roster(tmp_path, [Person("no-reply@otherco.io", ""),
+                                Person(DANA, "Dana Okafor")])
+    _todo(tmp_path, people)
+    assert json.loads(capsys.readouterr().out)["batch"] == [DANA]
+
+
+def test_roster_todo_survives_a_principal_with_no_address(tmp_path, capsys):
+    people = _roster(tmp_path, [Person(DANA, "Dana Okafor")])
+    assert bob.main(["roster-todo", "--principal", ",",
+                     "--people", str(people)]) == 0
+
+
+def test_the_connector_summary_keeps_its_three_kinds_of_blank_apart(
+        tmp_path, capsys):
+    people = _roster(tmp_path, [Person(DANA, "Dana Okafor"),
+                                Person(BEN, "Ben Mercer"),
+                                Person(KAI, "Kai Rivera")])
+    f = _connector_file(tmp_path, [
+        {"asked": DANA, "status": "ok"},
+        {"asked": BEN, "status": "blocked"},
+    ])
+    _roster_connector(tmp_path, people, f)
+    out = capsys.readouterr().out
+    assert re.search(r"\b1\b[^\n]*nothing direct in their newest threads", out)
+    assert re.search(r"\b1\b[^\n]*could not be looked up", out)
+    assert re.search(r"\b1\b[^\n]*not asked about yet", out)
+    assert "which means not found" not in out
+
+
+def test_reset_dates_lets_a_pass_correct_an_overstated_date(tmp_path):
+    people = _roster(tmp_path, [Person(DANA, "Dana Okafor",
+                                       last_contact="2026-08-01"),
+                                Person(BEN, "Ben Mercer",
+                                       last_contact="2026-07-01")])
+    f = _connector_file(tmp_path, [
+        _thread("t1", DANA, [ME], "2026-06-15T16:00:00Z"),
+        {"asked": DANA, "status": "ok"},
+    ])
+    bob.main(["roster", "--connector", str(f), "--principal", ME,
+              "--people", str(people), "--reset-dates"])
+    got = {p.address: p.last_contact for p in read_people(people)}
+    # Dana was looked at: her date is what this pass found.
+    assert got[DANA] == "2026-06-15"
+    # Ben was not asked about: a reset must not blank what it didn't check.
+    assert got[BEN] == "2026-07-01"

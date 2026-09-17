@@ -164,9 +164,8 @@ Then show what the scan printed and the link, as `commands/bob-scan.md` says.
 
 Ask one question in plain words. Offer only what works here:
 
-- **When they last spoke to each person** — only with a Gmail token or a mail
-  export. The connector can't do this pass yet; leave it out rather than offer
-  something that fails.
+- **When they last spoke to each person** — with the Gmail tools, a Gmail
+  token, or a mail export.
 - **An Airtable base** they can sort and filter — only if the Airtable tools
   are on hand.
 - **Thanking the people who introduced them** — only if the Gmail tools are on

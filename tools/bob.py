@@ -28,7 +28,7 @@ from preflight import (  # noqa: E402
 from scan_coverage import Coverage, beside, read_coverage  # noqa: E402
 from intro_store import read_intros, write_intros  # noqa: E402
 from mail_source import best_name, normalize_addr  # noqa: E402
-from last_contact import last_direct_contact  # noqa: E402
+from last_contact import is_automated, last_direct_contact  # noqa: E402
 from people_store import build_people, read_people, write_people  # noqa: E402
 from mbox_source import MboxSource  # noqa: E402
 from render import render  # noqa: E402
@@ -493,19 +493,34 @@ def cmd_roster(args) -> int:
         print(f"No roster at {people_path}. Run `bob scan` first.")
         return 1
 
-    source, _ = build_source(args)
+    try:
+        source, _ = build_source(args)
+    except FileNotFoundError as exc:
+        print(f"Could not read {exc.filename}. Nothing was changed.")
+        return 1
+    connector = bool(getattr(args, "connector", None))
+    if connector and source.blocked:
+        # An empty file is a retrieval that wrote nothing. Reporting it as
+        # "nobody has been spoken to" would present a failure as an answer.
+        print("Bob could not read anything from the connector file, so "
+              "nothing was changed. Run the searches again.")
+        return 1
     # flush: stdout is block-buffered when it is not a terminal, so a plugin
     # capturing this saw nothing at all until the process ended -- the exact
     # silence this whole change exists to remove.
-    print(f"Reading headers for {len(people)} people. No message bodies are "
-          f"read and none are kept.", flush=True)
-    print("Working out what to read.", flush=True)
+    if connector:
+        print(f"Reading the connector file for {len(people)} people.",
+              flush=True)
+    else:
+        print(f"Reading headers for {len(people)} people. No message bodies "
+              f"are read and none are kept.", flush=True)
+        print("Working out what to read.", flush=True)
 
     # The roster size is not the work. This walks the mailbox, and saying
     # "517 people" while reading twenty thousand threads is how a two-hour run
     # looked like a hang -- the number on screen implied it was nearly done.
     def _announce(n: int, unit: str) -> None:
-        if not n:
+        if not n or connector:
             return
         # Two paths, two rates, both measured rather than guessed. Asking
         # about a person averaged 84/min against a real Gmail account; 80 is
@@ -519,12 +534,34 @@ def cmd_roster(args) -> int:
         print(f"{what}{when}. Progress below; partial results are saved as it "
               f"goes.", flush=True)
 
+    # Who this pass actually looked at. Only they can be reset: blanking a
+    # date the pass never checked would be a loss dressed up as a correction.
+    looked = (source.asked - source.could_not_look if connector
+              else {p.address for p in people})
+
+    def _merged(seen_so_far: dict) -> list:
+        out = []
+        for p in people:
+            new = seen_so_far[p.address].date if p.address in seen_so_far else ""
+            if args.reset_dates and p.address in looked:
+                out.append(replace(p, last_contact=new))
+            # Never backwards. A pass that saw less (the connector reads a
+            # person's newest thread or three) must not erase a later
+            # conversation an earlier pass found. ISO days compare as
+            # strings. --reset-dates is the way to correct a date set under
+            # older, looser rules.
+            elif new > p.last_contact:
+                out.append(replace(p, last_contact=new))
+            else:
+                out.append(p)
+        return out
+
     def _save(seen_so_far: dict) -> None:
-        write_people([replace(p, last_contact=seen_so_far[p.address].date)
-                      if p.address in seen_so_far else p
-                      for p in people], people_path)
+        write_people(_merged(seen_so_far), people_path)
 
     def _tick(done: int, total: int, live: dict) -> None:
+        if connector:
+            return            # one file, read at once: nothing to count
         pct = round(100 * done / total) if total else 100
         print(f"  {done:,}/{total:,} ({pct}%) · "
               f"{len(live)} of {len(people)} people placed", flush=True)
@@ -537,19 +574,92 @@ def cmd_roster(args) -> int:
                                query=args.query, limit=args.limit_net or 100000,
                                on_start=_announce, on_progress=_tick)
 
-    updated = [replace(p, last_contact=seen[p.address].date)
-               if p.address in seen else p
-               for p in people]
+    updated = _merged(seen)
     write_people(updated, people_path)
 
     found = sum(1 for p in updated if p.last_contact)
     print(f"\n{found} of {len(updated)} have a direct exchange on record.")
-    # Never let silence read as "you have never spoken". Bob sees one channel.
-    missing = len(updated) - found
-    if missing:
-        print(f"{missing} have none that this mailbox can see — which means "
-              f"not found, not never.")
+    blank = {p.address for p in updated if not p.last_contact}
+    if connector:
+        # Three different blanks, and only the first is a finding. Lumping
+        # them together reported people Bob never looked at as "not found".
+        waiting = set(_roster_todo(updated, source.asked,
+                                   source.could_not_look, source.failures,
+                                   _addresses(args.principal)))
+        failed = blank & source.could_not_look
+        nothing = blank & (source.asked - source.could_not_look)
+        if nothing:
+            print(f"{len(nothing)} have nothing direct in their newest threads "
+                  f"— not found, not never.")
+        if failed:
+            print(f"{len(failed)} could not be looked up — the search failed.")
+        pending = (waiting - source.could_not_look) & blank
+        if pending:
+            print(f"{len(pending)} not asked about yet — `bob roster-todo` "
+                  f"gives the next batch.")
+    elif blank:
+        # Never let silence read as "you have never spoken". Bob sees one
+        # channel.
+        print(f"{len(blank)} have none that this mailbox can see — which "
+              f"means not found, not never.")
     print(f"wrote {people_path}")
+    return 0
+
+
+ROSTER_BATCH = 50
+
+
+# A person whose lookup failed this many times is not asked again: one address
+# that always errors would otherwise keep the batch loop going forever.
+ROSTER_MAX_FAILURES = 2
+
+
+def _roster_todo(people, asked, blocked, failures, principal) -> list:
+    """Roster addresses still to ask about, in roster order.
+
+    Never asked about: services, machine addresses the pass ignores anyway,
+    the principal, anyone already looked up, and anyone who has failed
+    `ROSTER_MAX_FAILURES` times. A person whose lookup failed fewer times is
+    asked again.
+    """
+    skip = {a.lower() for a in principal}
+    done = set(asked) - set(blocked)
+    return [p.address for p in people
+            if p.address and not p.is_service and not is_automated(p.address)
+            and p.address not in skip and p.address not in done
+            and failures.get(p.address, 0) < ROSTER_MAX_FAILURES]
+
+
+def cmd_roster_todo(args) -> int:
+    """The next batch for the agent to search on the connector (HAP-356).
+
+    Bob's Python cannot call the connector, so the roster pass splits like the
+    scan: this names who to ask about, the agent searches and writes the
+    threads plus one `asked` marker per person, and `roster --connector`
+    reads the file. People already marked done are left out, so a stopped
+    batch resumes where it stopped.
+    """
+    import json
+    people = read_people(as_dir(args.people))
+    if not people:
+        print(f"No roster at {as_dir(args.people)}. Run `bob scan` first.")
+        return 1
+    principal = _addresses(args.principal)
+    existing = [f for f in (args.connector or []) if Path(f).exists()]
+    asked, blocked, failures = set(), set(), {}
+    if existing:
+        src = ConnectorSource((principal or [""])[0], existing)
+        asked, blocked, failures = src.asked, src.could_not_look, src.failures
+    todo = _roster_todo(people, asked, blocked, failures, principal)
+    gave_up = sorted(a for a in blocked
+                     if failures.get(a, 0) >= ROSTER_MAX_FAILURES)
+    print(json.dumps({
+        "batch": todo[:args.batch],
+        "remaining": len(todo),
+        "done": len(asked - blocked),
+        "gave_up": gave_up,
+        "query": "from:{address} OR to:{address}",
+    }, indent=2))
     return 0
 
 
@@ -727,6 +837,9 @@ def main(argv=None) -> int:
     r = sub.add_parser("roster", help="fill in when you last spoke to each person")
     r.add_argument("--mbox", type=Path, help=".mbox file or a directory of them")
     r.add_argument("--gmail", action="store_true", help="use the Gmail source")
+    r.add_argument("--connector", type=Path, nargs="+", metavar="FILE",
+                   help="JSONL written by the agent from the Gmail connector: "
+                        "threads plus one {\"asked\": address} line per person")
     r.add_argument("--principal", help="the mailbox owner's address")
     r.add_argument("--people", type=Path, default=None)
     r.add_argument("--data-dir", help="the user's Bob folder; people.csv and "
@@ -736,7 +849,21 @@ def main(argv=None) -> int:
                         "the whole mailbox.")
     r.add_argument("--limit-net", type=int, default=None,
                    help="cap threads read; omitted means read everything")
+    r.add_argument("--reset-dates", action="store_true",
+                   help="let this pass replace the dates of the people it "
+                        "looked at, even with an older or empty one")
     r.set_defaults(fn=cmd_roster)
+
+    rt = sub.add_parser("roster-todo",
+                        help="the next people to search for on the connector")
+    rt.add_argument("--connector", type=Path, nargs="*", metavar="FILE",
+                    help="roster files written so far; missing ones are fine")
+    rt.add_argument("--principal", help="the mailbox owner's address")
+    rt.add_argument("--people", type=Path, default=None)
+    rt.add_argument("--data-dir", help="the user's Bob folder")
+    rt.add_argument("--batch", type=int, default=ROSTER_BATCH,
+                    help=f"people per batch (default {ROSTER_BATCH})")
+    rt.set_defaults(fn=cmd_roster_todo)
 
     g = sub.add_parser("graph", help="read intros.csv, write network.html")
     g.add_argument("--intros", type=Path, default=None)
