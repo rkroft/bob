@@ -702,12 +702,15 @@ _INTRO_SUBJECT = (SUBJECT_ARROW, SUBJECT_KEYWORD, SUBJECT_INTRO_ONLY,
 def _worth_opening(t) -> bool:
     """Does a cut-off thread look enough like an introduction to fetch?
 
-    Judged across every visible message, not by running `detect`: detect reads
-    the oldest *visible* message, which on a cut-off thread is a reply -- an
-    out-of-office or a reply-all that grew past six people would disqualify an
-    intro that is really there. Deliberately narrow: a separator word ("drinks
-    and dinner") or three people on a reply is not enough, because each fetch
-    costs the user tokens and a heavy mailbox has hundreds of long threads.
+    Judged mainly by subject across every visible message, because `detect`
+    reads the oldest *visible* message -- on a cut-off thread a reply, so an
+    out-of-office or a reply-all past six people would hide an intro that is
+    really there. `detect` is consulted too: a handoff signal (which may be an
+    artefact of the cut) or an intro verdict (which would credit a replier)
+    both earn a fetch. Deliberately narrow otherwise: a separator word
+    ("drinks and dinner") or three people on a reply is not enough, because
+    each fetch costs the user tokens and a heavy mailbox has hundreds of long
+    threads.
     """
     if not any(m.from_addr and not is_automated(m.from_addr)
                and not HARD_NEGATIVE_SENDERS.search(m.from_addr)

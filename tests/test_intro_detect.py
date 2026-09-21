@@ -605,6 +605,7 @@ def test_a_three_person_email_with_an_intro_subject_is_an_intro(subject):
 
 @pytest.mark.parametrize("subject", [
     "Kai, meet Alice", "Ben meet Alice", "Re: Nadia, meet Ben",
+    "Please meet Alice Tran",
 ])
 def test_a_name_meet_name_subject_is_an_intro(subject):
     t = Thread(id="t_meet", messages=[
@@ -619,6 +620,8 @@ def test_a_name_meet_name_subject_is_an_intro(subject):
     # found in review: capitalised lead words and time words
     "Let's meet Tuesday", "Re: Let's meet Thursday", "Can't meet Friday",
     "Lets meet Next Week", "Team meet Up", "Come meet Ben!", "Please meet Soon",
+    # verification review: abbreviations and group greetings
+    "Lunch meet Thurs", "Everyone, meet Alice", "Hi, meet Ben", "All meet Tues",
 ])
 def test_meet_in_an_ordinary_subject_is_not_the_meet_signal(subject):
     t = Thread(id="t_nm", messages=[
@@ -715,4 +718,87 @@ def test_news_at_is_a_whole_local_part():
     t = Thread(id="t_news", messages=[
         msg(1, "dana.news@example.com", [ALICE, BEN], "Alice <> Ben",
             "I'd like to introduce you two.")])
+    assert detect(t, principal=ALICE).is_intro
+
+
+@pytest.mark.parametrize("subject", ["Alice <> Ben", "Alice, meet Ben",
+                                     "Intro: Alice / Ben"])
+def test_an_intro_that_forwards_something_automated_as_context_still_counts(subject):
+    """"See below" above a forwarded LinkedIn message is an intro with
+    context, not a newsletter. Verification review, 2026-09-21."""
+    body = ("Alice, Ben -- see below. ---------- Forwarded message --------- "
+            "From: Acme <noreply@example.com>")
+    t = Thread(id="t_ctx", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], subject, body, day=1),
+        msg(2, BEN, [ALICE], f"Re: {subject}", "Great to meet you.", day=2),
+    ])
+    assert detect(t, principal=ALICE).is_intro
+
+
+@pytest.mark.parametrize("subject", ["VPN connection issue", "Connection request"])
+def test_connection_in_a_subject_is_not_intro_evidence(subject):
+    t = Thread(id="t_conn", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], subject, None, day=1)])
+    assert not detect(t, principal=ALICE, mode="metadata").is_intro
+
+
+
+
+def test_a_connection_to_someone_in_a_subject_is_intro_evidence():
+    """A program match titled "Acme connection to Alice Tran" was the one
+    real intro lost when "connection" was dropped outright."""
+    t = Thread(id="t_conn2", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Acme connection to Alice Tran", None)])
+    assert detect(t, principal=ALICE, mode="metadata").is_intro
+
+
+# --- release-gate review for 0.1.12 ----------------------------------------
+
+@pytest.mark.parametrize("body", [
+    "Please meet us in the lobby at 9.", "Please meet me at the Starbucks.",
+    "Please meet the deadline Friday.", "Please meet with Kai before the review.",
+    "Please meet Tuesday at 10 in the lobby.", "Please meet ASAP.",
+    "Could you two please meet Friday to sort the budget?",
+    "Please meet The Acme team at noon.",
+])
+def test_please_meet_for_logistics_is_not_handoff_wording(body):
+    t = Thread(id="t_pml", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Tomorrow", body, day=1)])
+    d = detect(t, principal=ALICE)
+    assert "body_handoff" not in d.signals and not d.is_intro
+
+
+_NEWS = ("See this! ---------- Forwarded message --------- "
+         "From: Acme <news@example.com>")
+
+
+@pytest.mark.parametrize("subject", [
+    "Fwd: Intro to AI & ML webinar", "Fwd: Webinar: Introduction to AI/ML",
+    "Fwd: Intro", "Fwd: Introduction",
+    "[EXT] Fwd: Introducing the Salon Series", "WG: Introducing the Salon Series",
+    "TR: Introducing the Salon Series", "Introducing the Salon Series",
+])
+def test_forwarded_newsletters_stay_out_whatever_the_prefix(subject):
+    t = Thread(id="t_fn", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], subject, _NEWS, day=1)])
+    assert detect(t, principal=ALICE).disqualified_by == "forwarded_bulk"
+
+
+@pytest.mark.parametrize("subject", ["Everybody, meet Alice", "Guys, meet Alice",
+                                     "Y'all meet Ben", "Welcome, meet Nadia"])
+def test_group_greetings_are_not_the_meet_signal(subject):
+    t = Thread(id="t_gg", messages=[msg(1, CONNECTOR, [ALICE, BEN], subject, None)])
+    assert "subject_meet" not in detect(t, principal=ALICE).signals
+
+
+def test_a_forwarded_platform_intro_with_a_pair_subject_is_a_known_trade():
+    """Known trade, pinned so it is not rediscovered as a bug: "Fwd: Nadia/Alice
+    intro" quoting a no-reply platform sender, with nothing above the forward,
+    reads the same as "Fwd: Intro to AI & ML webinar" and is dropped. An arrow
+    subject, handoff wording above the forward, or a dropout all keep it."""
+    body = "---------- Forwarded message --------- From: Hub <noreply@example.com>"
+    t = Thread(id="t_trade", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Fwd: Nadia/Alice intro", body)])
+    assert detect(t, principal=ALICE).disqualified_by == "forwarded_bulk"
+    t.messages[0].subject = "Fwd: Alice <> Ben"
     assert detect(t, principal=ALICE).is_intro

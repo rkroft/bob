@@ -4,10 +4,9 @@ The roster's first increment (Plugin MVP §4.4). The graph shows the shape; this
 answers "who". Two columns of the eventual roster are here — name and intro
 counts — with last-contact and company-from-domain still to come.
 
-Kept separate from `intros.csv` on purpose. That file is a record of *events*
-and never changes once written; this one is *derived* and is rebuilt from
-scratch on every scan. Mixing them would mean rewriting event history whenever
-someone's display name changed.
+Kept separate from `intros.csv` on purpose: that file has one row per
+introduction, this one one row per person, derived from those rows. Both are
+rewritten by every scan, so neither holds anything a scan cannot reproduce.
 """
 
 from __future__ import annotations

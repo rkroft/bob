@@ -36,7 +36,9 @@ Anything else goes straight on.
 ## 0. Already set up?
 
 If `<folder>/intros.csv` exists (find the folder with §1 first), this person
-has scanned before. Skip the welcome and don't rescan. Redraw the graph (§4,
+has scanned before. Skip the welcome and don't rescan. A question about one
+person ("who introduced me to X?") goes to the bob-ask skill, with no redraw.
+Otherwise redraw the graph (§4,
 the `graph` command only), answer what they asked from the files, and offer a
 fresh scan as a choice. If `graph` stops because it doesn't know their address,
 do the address part of §2 first, then redraw.

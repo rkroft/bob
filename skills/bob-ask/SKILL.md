@@ -9,7 +9,11 @@ The user is asking because they don't remember. "Not found" is only an answer
 after every place it could be has been read. A thin check that comes back
 empty is worse than no answer: the user believes it.
 
-The folder is the one the bob-start skill's §1 finds.
+The folder is the one the bob-start skill's §1 finds. If it has no
+`intros.csv`, the user hasn't scanned yet: say so, and go straight to §2 below.
+
+For a question about one person's introductions, this skill wins over the
+general "answer from the files" rule in bob-start.
 
 ## 1. The table first
 
@@ -68,6 +72,12 @@ If you found an introduction the table lacks, say plainly that the scan missed
 it and why, if you can see why (the thread was cut off, it opened as an ask).
 Don't edit `intros.csv` by hand: the next scan rewrites that file and the row
 would silently disappear.
+
+## Done well
+
+- The answer names who, when, and links the thread, or says how many
+  threads under how many addresses were read before saying none.
+- A miss by the scan is reported as a miss, with the reason if visible.
 
 ## Done badly
 

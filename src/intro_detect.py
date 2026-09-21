@@ -124,7 +124,10 @@ def _domain(addr: str) -> str:
 
 SUBJECT_ARROW = re.compile(r"<\s*>|<>")
 SUBJECT_KEYWORD = re.compile(
-    r"\b(intros?|introductions?|introducing|introduce|connecting|connection)\b",
+    # "connection" only as "a connection to/with someone": "VPN connection
+    # issue" to two people is not an intro, "Acme connection to Alice" is.
+    r"\b(intros?|introductions?|introducing|introduce|connecting|"
+    r"connection\s+(?:to|with|between))\b",
     re.I,
 )
 
@@ -132,12 +135,16 @@ SUBJECT_KEYWORD = re.compile(
 # and nothing after them but punctuation. Scheduling uses the same words --
 # "Let's meet Tuesday", "Team meet Up" -- so the lead word must not be a verb
 # or pronoun and the second must not be a time word.
-_MEET_LEAD_STOP = (r"(?!(?i:let'?s|lets|let|can'?t|cant|can|could|come|team|we|"
-                   r"should|please|pls|will|would|must|to|i|you|re)\b)")
+_MEET_LEAD_STOP = (r"(?!(?i:let['’]?s|let|can['’]?t|cant|can|could|come|team|we|"
+                   r"should|will|would|must|to|i|you|re|everyone|folks|all|hi|"
+                   r"hey|hello|lunch|coffee|dinner|everybody|guys|y['’]?all|"
+                   r"welcome)\b)")
 _MEET_TAIL_STOP = (r"(?!(?i:monday|tuesday|wednesday|thursday|friday|saturday|"
                    r"sunday|today|tomorrow|tonight|soon|up|next|later|again|this|"
                    r"the|january|february|march|april|may|june|july|august|"
-                   r"september|october|november|december)\b)")
+                   r"september|october|november|december|mon|tue|tues|wed|weds|"
+                   r"thu|thur|thurs|fri|sat|sun|tmrw|noon|now|asap|weekly|zoom|"
+                   r"here)\b)")
 SUBJECT_MEET = re.compile(
     r"^\s*(?:(?i:re|fwd?)\s*:\s*)*" + _MEET_LEAD_STOP + r"[A-Z][\w'-]+,?\s+"
     r"meet\s+" + _MEET_TAIL_STOP + r"[A-Z][\w'-]+(?:\s+[A-Z][\w'-]+)?"
@@ -227,6 +234,10 @@ BODY_HANDOFF = re.compile(
     r"you\s+(?:should|ought\s+to)\s+meet|"
     r"you\s+(?:two\s+)?(?:would|will|d)\s+hit\s+it\s+off|"
     r"meet\s+my\s+(?:friend|colleague|former\s+colleague)"
+    # Not "please meet": tried 2026-09-21 and dropped. Logistics uses it as
+    # often as introductions do ("please meet us in the lobby", "please meet
+    # Tuesday at 10"), and it found one intro in a 1,992-thread sample. The
+    # "please meet" search stays; those threads count on other evidence.
     r")",
     re.I,
 )
@@ -370,7 +381,7 @@ def _disqualify(thread: Thread) -> str | None:
         return "calendar_invite"
     if first.is_bulk:                      # List-Unsubscribe / Precedence: bulk
         return "bulk_mail"
-    if _forwarded_from_automated(first):
+    if _forwarded_from_automated(thread):
         return "forwarded_bulk"
     if len(participants(first)) > MAX_PARTICIPANTS:
         return "group_thread"
@@ -382,13 +393,36 @@ def _disqualify(thread: Thread) -> str | None:
     return None
 
 
-def _forwarded_from_automated(first: Message) -> bool:
+# Forward prefixes in several mail clients and languages, after an optional
+# "[EXT]" tag that company gateways add.
+_FWD_SUBJECT = re.compile(
+    r"^\s*(?:\[[^\]]{1,20}\]\s*)?(?:(?:re|aw|sv)\s*:\s*)*"
+    r"(?:fwd?|fw|wg|tr|rv|enc)\s*:", re.I)
+
+
+def _forwarded_from_automated(thread: Thread) -> bool:
     """A forward whose quoted sender is a mailing list or a no-reply address.
 
     "Fwd: Introducing <a product>" sent to two friends scores like an intro on
     its subject and its three people. The quoted From line gives it away.
+
+    Only for a thread that is itself a forward, and never when the subject or
+    the shape already says introduction: "Alice <> Ben -- see below" above a
+    forwarded LinkedIn message is an intro with context.
     """
+    first = thread.messages[0]
+    subject = first.subject or ""
     body = first.body_text or ""
+    # A forward by its subject, or by a forward marker right at the top of the
+    # body when the prefix was deleted.
+    if not (_FWD_SUBJECT.search(subject) or FORWARD_MARKER.search(body[:200])):
+        return False
+    # Only syntax nobody uses for a product name. "Intro to AI & ML" reads as
+    # a pair intro, and "Intro" alone as an intro-only subject, so neither is
+    # enough here.
+    if (SUBJECT_ARROW.search(subject) or SUBJECT_MEET.search(subject)
+            or _structural_dropout(thread)):
+        return False
     marker = FORWARD_MARKER.search(body)
     if not marker:
         return False
