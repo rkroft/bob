@@ -30,6 +30,11 @@ plausible-looking guess in a disqualifier is worse than a missing one:
   inferred from the sender here: guessing it from an address list is the kind of
   quiet heuristic that later reads as a bug.
 
+Bodies are not returned, but each message's **snippet** is: its first ~200
+characters, where "I'd like to introduce you two" and "moving Dana to bcc" sit.
+It is read as `body_text` (reversing the 2026-09-02 metadata-only decision on
+2026-09-21, `Connector Pivot.md` §9).
+
 BCC is returned by the connector but `Message` has no field for it, and folding
 it into `cc_addrs` would invent participants — a self-BCC on the principal's own
 sent mail is common and would make them a third party to their own thread. It is
@@ -38,6 +43,7 @@ dropped, deliberately.
 
 from __future__ import annotations
 
+import html
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,7 +81,9 @@ def thread_from_json(obj: dict) -> Thread:
             cc_addrs=list(m.get("ccRecipients") or []),
             subject=m.get("subject", ""),
             date=_date(m.get("date")),
-            body_text=None,          # metadata mode — see the module docstring
+            # The snippet is the message's first ~200 characters, which is
+            # where intro wording sits. See the module docstring.
+            body_text=html.unescape(m.get("snippet") or "") or None,
         )
         for m in (obj.get("messages") or [])
     ]
@@ -112,6 +120,22 @@ def read_jsonl(path: Path, on_skip: "Optional[Callable[[str], None]]" = None
                 continue
 
 
+def missing_opener(thread: Thread) -> bool:
+    """True when the thread's first email is not among the messages we hold.
+
+    Gmail's thread id is the id of the thread's first message (checked
+    2026-09-18 against every multi-message thread in a Takeout export and a live
+    `search_threads` page). `search_threads` shows only the newest five, so on a
+    long thread the opener -- the email that made the introduction -- is cut
+    off, and detection would credit a later replier as the introducer.
+
+    A thread whose messages carry no ids is never called truncated: that is
+    "cannot tell", and guessing would send the agent to fetch for nothing.
+    """
+    ids = {m.id for m in thread.messages if m.id}
+    return bool(ids) and bool(thread.id) and thread.id not in ids
+
+
 def _key(m: Message) -> tuple:
     """A message's identity: its id, or sender and date when it has none."""
     return (m.id,) if m.id else ("", m.from_addr, m.date)
@@ -132,8 +156,14 @@ def _merge(kept: Thread, extra: Thread) -> None:
         kept.__post_init__()          # re-sort; chronology is load-bearing
 
 
-def _load(paths: Sequence[Path] | Path) -> tuple[list[Thread], int, dict, dict]:
+def _load(paths: Sequence[Path] | Path, fetches: "Optional[dict]" = None
+          ) -> tuple[list[Thread], int, dict, dict]:
     """Threads, the count of unusable lines, and the roster pass's markers.
+
+    The opener pass writes its own markers, `{"fetched": thread_id, "status":
+    ...}`, one per `get_thread`. They are collected into the `fetches` dict
+    passed in rather than returned, so the four-value shape every
+    caller already unpacks stays as it is.
 
     A marker is `{"asked": address, "status": "ok" | "blocked"}`, written by the
     agent after it has looked for one person. It is not a thread and not a
@@ -159,6 +189,16 @@ def _load(paths: Sequence[Path] | Path) -> tuple[list[Thread], int, dict, dict]:
                 # Valid JSON of the wrong shape -- `[1,2]` parses and then
                 # blows up in thread_from_json.
                 skipped += 1
+                continue
+            if isinstance(obj.get("fetched"), str) and obj["fetched"].strip():
+                # Same rules as `asked`: last marker wins, only "ok" is done,
+                # every other status is a failure and is counted.
+                tid = obj["fetched"].strip()
+                if fetches is not None:
+                    st = fetches.setdefault(tid, {"ok": False, "failures": 0})
+                    st["ok"] = obj.get("status") == "ok"
+                    if not st["ok"]:
+                        st["failures"] += 1
                 continue
             if isinstance(obj.get("asked"), str) and obj["asked"].strip():
                 who = normalize_addr(obj["asked"])
@@ -214,8 +254,12 @@ class ConnectorSource:
 
     def __init__(self, principal: str, paths: Sequence[Path] | Path) -> None:
         self._principal = principal
-        threads, skipped, asked, failures = _load(paths)
+        fetches: dict = {}
+        threads, skipped, asked, failures = _load(paths, fetches)
         self._threads = {t.id: t for t in threads}
+        #: Opener pass: thread id -> {"ok": bool, "failures": int}. A thread
+        #: marked ok was fetched whole, whether or not its opener turned up.
+        self.fetches = fetches
         #: Lines that could not be used. Reported, never swallowed.
         self.skipped_lines = skipped
         #: Roster pass: everyone the agent has looked for, and the subset it

@@ -148,6 +148,36 @@ whole mechanism exists to prevent. Record a query that errored with its `error`;
 an errored query means mail that exists and was not read, and dropping it makes
 a failure indistinguishable from an empty result.
 
+**Then fetch the long threads whole.** Search shows only the newest five
+messages of a thread, so on a long one the email that made the introduction is
+cut off, and Bob would credit whoever replied later. Bob knows which threads
+those are; ask it:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/tools/bob.py" scan-todo \
+  --data-dir "$CLAUDE_PLUGIN_OPTION_DATA_DIR"
+```
+
+It prints `batch` (up to 25 thread ids) and `remaining`. For every id in
+`batch` — calls may run 5–10 in parallel — `get_thread` with `messageFormat:
+MINIMAL` (the only format that carries the first email's subject, which
+detection reads; never a format with message bodies). Append the thread
+exactly as returned, then the marker `{"fetched": "<the id from batch>",
+"status": "ok"}`. Any tool error → `{"fetched": "<id>", "status": "blocked"}`
+instead. Append one after another, as with the search results; never rewrite
+the file.
+
+Ask `scan-todo` again after each batch; stop when `batch` is empty. Each fetch
+costs a little of the user's usage and `remaining` is usually a few dozen —
+if it is over 100 on the first ask, say the number and ask before fetching.
+If an id you already marked comes back in `batch`, stop and show what
+`scan-todo` printed: the marker isn't matching, and fetching again won't fix it.
+
+Don't pick threads yourself, and don't fix an introducer by hand. If one still
+looks wrong after this, that is a bug in Bob, not something to patch in the
+table. `coverage.json` describes the searches only; write it before this step,
+as above.
+
 Then hand it to Bob:
 
 ```bash
@@ -164,6 +194,9 @@ Bob cross-checks it against the file and against the net: a query it never
 sees, a query not shown to have finished, or a manifest claiming more threads
 than the file holds all make the scan report as partial. That is the mechanism
 working, not a bug to route around.
+
+**If the scan says long threads "still need their first email read"**, the
+fetch step above stopped early. Go back to it, then run the scan again.
 
 **If the scan exits nonzero on this path, it read nothing.** Print what it said
 and stop. Do not describe an empty result as "no introductions found", do not

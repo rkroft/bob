@@ -37,6 +37,9 @@ Mode = Literal["full", "metadata"]
 
 WEIGHTS: dict[str, float] = {
     "structural_dropout": 0.55,   # strongest, and language-independent
+    # The same shape starting mid-thread, but weaker: delegation (an assistant,
+    # a hiring manager) looks identical, so it needs a subject or wording too.
+    "late_handoff": 0.35,
     "bcc_handoff": 0.45,          # "moving you to bcc" — almost unique to intros
     "subject_arrow": 0.40,        # "A <> B" is effectively dedicated intro syntax
     "subject_intro_only": 0.35,   # subject IS the word: "Intro", "Quick intro"
@@ -44,7 +47,11 @@ WEIGHTS: dict[str, float] = {
     "subject_keyword": 0.20,
     "subject_separator": 0.15,    # "A / B", "A x B" — weaker, collides with normal subjects
     "body_handoff": 0.25,
-    "three_party_open": 0.10,     # necessary but nowhere near sufficient
+    # Not enough alone, but enough with an intro subject or intro wording:
+    # a three-person email titled "E-Intro" where nobody drops off was scored
+    # 0.30 at 0.10 and missed (measured 2026-09-21).
+    "three_party_open": 0.25,
+    "subject_meet": 0.35,         # "Kai, meet Alice"
     # two-party shapes — see _shape_of()
     "request_subject": 0.45,      # "Intro to Nadia Okonjo?"
     "request_body": 0.40,         # "any chance you could introduce me to..."
@@ -55,7 +62,7 @@ WEIGHTS: dict[str, float] = {
 # matters more than recall for onboarding (product-definition 5.1).
 HARD_NEGATIVE_SENDERS = re.compile(
     r"(no-?reply|do-?not-?reply|notifications?@|mailer-daemon|postmaster|"
-    r"bounce|automated|alerts?@|digest@|newsletter|"
+    r"bounce|automated|alerts?@|digest@|newsletter|(?:^|[<\s])news@|"
     # meeting-notetaker bots: they mail *about* a meeting that already
     # happened, and their subjects carry the "A <> B" title verbatim.
     r"fireflies|otter\.ai|fathom\.video|read\.ai|avoma|sembly|grain\.co|"
@@ -103,10 +110,39 @@ def _is_self_pitch(first: Message) -> bool:
 
 MAX_PARTICIPANTS = 6  # above this it's a group thread, not an introduction
 
+# Consumer mail providers. Two people sharing one of these share nothing else,
+# so a shared domain there says nothing about being colleagues.
+FREEMAIL = frozenset({
+    "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com",
+    "msn.com", "yahoo.com", "icloud.com", "me.com", "mac.com", "aol.com",
+    "proton.me", "protonmail.com", "hey.com", "fastmail.com",
+})
+
+
+def _domain(addr: str) -> str:
+    return addr.rpartition("@")[2].lower()
+
 SUBJECT_ARROW = re.compile(r"<\s*>|<>")
 SUBJECT_KEYWORD = re.compile(
-    r"\b(intro|introduction|introducing|introduce|connecting|connection)\b", re.I
+    r"\b(intros?|introductions?|introducing|introduce|connecting|connection)\b",
+    re.I,
 )
+
+# "Kai, meet Alice" / "Ben meet Alice Tran". Capitalised names around "meet"
+# and nothing after them but punctuation. Scheduling uses the same words --
+# "Let's meet Tuesday", "Team meet Up" -- so the lead word must not be a verb
+# or pronoun and the second must not be a time word.
+_MEET_LEAD_STOP = (r"(?!(?i:let'?s|lets|let|can'?t|cant|can|could|come|team|we|"
+                   r"should|please|pls|will|would|must|to|i|you|re)\b)")
+_MEET_TAIL_STOP = (r"(?!(?i:monday|tuesday|wednesday|thursday|friday|saturday|"
+                   r"sunday|today|tomorrow|tonight|soon|up|next|later|again|this|"
+                   r"the|january|february|march|april|may|june|july|august|"
+                   r"september|october|november|december)\b)")
+SUBJECT_MEET = re.compile(
+    r"^\s*(?:(?i:re|fwd?)\s*:\s*)*" + _MEET_LEAD_STOP + r"[A-Z][\w'-]+,?\s+"
+    r"meet\s+" + _MEET_TAIL_STOP + r"[A-Z][\w'-]+(?:\s+[A-Z][\w'-]+)?"
+    r"\s*(?:[!.:(|\-–—].*)?$")
+
 # " / " and " x " between two name-ish tokens. Requires spaces so it doesn't
 # fire on dates, URLs, or "A/B test".
 SUBJECT_SEPARATOR = re.compile(
@@ -175,6 +211,7 @@ FORWARD_MARKER = re.compile(
     r"(-+\s*forwarded message\s*-+|^\s*begin forwarded message|^\s*fwd?:)", re.I | re.M
 )
 QUOTED_HEADER = re.compile(r"^\s*(?:from|to|cc)\s*:\s*(.+)$", re.I | re.M)
+_QUOTED_FROM = re.compile(r"\bfrom\s*:\s*[^<\n@]*?<?([\w.+-]+@[\w-]+\.[\w.-]+)", re.I)
 _ADDR_IN_TEXT = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
 BODY_HANDOFF = re.compile(
@@ -261,6 +298,45 @@ def _structural_dropout(thread: Thread) -> bool:
     return False
 
 
+def _late_handoff(thread: Thread) -> int | None:
+    """Index of a mid-thread handoff message, or None.
+
+    A double opt-in often opens with two people ("OK if I introduce you to
+    Ben?") and adds the third person in a later message. `_structural_dropout`
+    reads only message 1, so that thread scored as a request and the scan
+    dropped a completed introduction.
+
+    This is the same shape measured from a later message: someone already on
+    the thread sends a message that adds at least one new person, and in a
+    later message that sender is gone while the new person and one other
+    remain.
+
+    Delegation has exactly this shape: an assistant, a hiring manager or an
+    account exec is added and takes over. Two things keep it out. People added
+    from the sender's own company are colleagues, not introductions, so that
+    handoff is skipped. And the signal is weighted below the threshold, so a
+    thread also needs an intro subject or intro wording to count.
+    """
+    seen: set[str] = set()
+    for k, m in enumerate(thread.messages):
+        present = participants(m)
+        sender = m.from_addr.lower()
+        new = present - seen
+        home = _domain(sender)
+        colleagues = home not in FREEMAIL and all(
+            _domain(a) == home for a in new)
+        if (k and new and sender in seen and not colleagues
+                and 3 <= len(present) <= MAX_PARTICIPANTS):
+            others = present - {sender}
+            for later in thread.messages[k + 1:]:
+                after = participants(later)
+                if (sender not in after and new & after
+                        and len(others & after) >= 2):
+                    return k
+        seen |= present
+    return None
+
+
 def _three_party_open(thread: Thread) -> bool:
     if not thread.messages:
         return False
@@ -294,13 +370,37 @@ def _disqualify(thread: Thread) -> str | None:
         return "calendar_invite"
     if first.is_bulk:                      # List-Unsubscribe / Precedence: bulk
         return "bulk_mail"
+    if _forwarded_from_automated(first):
+        return "forwarded_bulk"
     if len(participants(first)) > MAX_PARTICIPANTS:
         return "group_thread"
     # Only where a handoff is impossible anyway. A genuine three-party intro
     # whose subject happens to name the sender's company stays scoreable.
-    if len(participants(first)) < 3 and _is_self_pitch(first):
+    if (len(participants(first)) < 3 and _is_self_pitch(first)
+            and _late_handoff(thread) is None):
         return "self_pitch"
     return None
+
+
+def _forwarded_from_automated(first: Message) -> bool:
+    """A forward whose quoted sender is a mailing list or a no-reply address.
+
+    "Fwd: Introducing <a product>" sent to two friends scores like an intro on
+    its subject and its three people. The quoted From line gives it away.
+    """
+    body = first.body_text or ""
+    marker = FORWARD_MARKER.search(body)
+    if not marker:
+        return False
+    # Someone introducing people above the forward is an intro that happens
+    # to quote something automated as context.
+    above = body[:marker.start()]
+    if BODY_HANDOFF.search(above) or BCC_HANDOFF.search(above):
+        return False
+    # The first quoted sender after the marker, by address. Not anchored to a
+    # line start: the connector's snippet collapses the body onto one line.
+    m = _QUOTED_FROM.search(body, marker.end(), marker.end() + 2000)
+    return bool(m) and bool(HARD_NEGATIVE_SENDERS.search(m.group(1).lower()))
 
 
 def _recovered_participants(thread: Thread) -> set[str]:
@@ -344,6 +444,13 @@ def _shape_of(thread: Thread, mode: Mode) -> tuple[str | None, list[str]]:
             signals.append("structural_dropout")
         return "handoff", signals
 
+    # --- late handoff: an ask that turned into the introduction ----------
+    # Checked before request: once the third person has been added and taken
+    # over, the ask in message 1 is history, not the thread's outcome.
+    if _late_handoff(thread) is not None:
+        signals.append("late_handoff")
+        return "handoff", signals
+
     # --- forward: three-party shape recovered from quoted headers ---------
     recovered = _recovered_participants(thread) if mode == "full" else set()
     if len(visible | recovered) >= 3:
@@ -385,6 +492,12 @@ def _assign_roles(
         return None, (), None
 
     first = thread.messages[0]
+    if kind == "handoff" and len(participants(first)) < 3:
+        # A late handoff: the connector is whoever made the handoff, not
+        # whoever opened the thread with the ask.
+        k = _late_handoff(thread)
+        if k is not None:
+            first = thread.messages[k]
     sender = first.from_addr.lower()
     visible = participants(first)
     p = principal.lower() if principal else None
@@ -451,6 +564,8 @@ def detect(thread: Thread, principal: str | None = None, mode: Mode = "full") ->
         signals.append("subject_keyword")
     if SUBJECT_SEPARATOR.search(subject):
         signals.append("subject_separator")
+    if SUBJECT_MEET.search(subject):
+        signals.append("subject_meet")
 
     # One subject line must not score three times. "Introduction to Acme"
     # matched request_subject (0.45), subject_keyword (0.20) AND
@@ -463,6 +578,12 @@ def detect(thread: Thread, principal: str | None = None, mode: Mode = "full") ->
 
     if mode == "full":
         body = _first_body(thread)
+        if "late_handoff" in signals:
+            # The intro wording is in the handoff message and the replies to
+            # it, not in the ask that opened the thread.
+            k = _late_handoff(thread)
+            body = "\n".join([body] + [m.body_text or ""
+                                        for m in thread.messages[k:]])
         if BCC_HANDOFF.search(body):
             signals.append("bcc_handoff")
         if BODY_HANDOFF.search(body):
@@ -525,4 +646,12 @@ def search_queries() -> Sequence[str]:
         '"connecting you"', '"putting you in touch"', '"put you in touch"',
         '"you two should"', '"intro you to"', '"thought you two"',
         '"moving you to bcc"', '"to bcc"',
+        # Added 2026-09-21, each measured finding intros the rest missed on a
+        # 1,992-thread sample. Gmail matches whole words: `subject:intro` does
+        # not find "Intros". Tried and dropped: subject:meet, subject:connect
+        # and the principal's first name -- 150+ threads of noise for one intro.
+        'subject:intros', 'subject:introductions',
+        '"please meet"', '"connect you with"', '"you should meet"', '"meet my"',
+        '"put you two in touch"', '"introduce you two"',
+        '"introduce the two of you"', '"e-intro"',
     )

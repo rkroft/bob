@@ -392,3 +392,327 @@ def test_no_query_in_the_net_is_punctuation_only():
                 f"query {q!r} has no searchable characters — Gmail will match "
                 f"everything"
             )
+
+
+# --- the late handoff: an ask that became an introduction -----------------
+# A double opt-in often opens as two people: "OK if I introduce you to Ben?"
+# The third person is added two messages later, and the connector drops off
+# after that. The only structural check read message 1, so the whole thread
+# scored as a request and the scan dropped it. That was a real miss in a Cowork
+# run on 2026-09-21, with the introducer's ask, the yes and the handoff all
+# present in the thread.
+
+KAI = "kai.rivera@example.com"
+
+
+def _asked_then_added(asker, asked, subject="Intro to Ben Mercer?"):
+    """asker asks asked; the connector adds Ben; Ben writes to Alice alone."""
+    connector = CONNECTOR
+    return Thread(id="t_late", messages=[
+        msg(1, asker, [asked], subject,
+            "Had a call with Ben today. OK for me to make an intro?", day=1),
+        msg(2, asked, [asker], f"Re: {subject}", "Yes please!", day=1),
+        msg(3, connector, [ALICE, BEN], f"Re: {subject}",
+            "+Ben. Alice, meet Ben.", day=2),
+        msg(4, BEN, [ALICE], f"Re: {subject}",
+            "Thanks for the intro, Dana (off to BCC). Friday?", day=2),
+    ])
+
+
+def test_connector_asks_first_then_adds_the_third_person():
+    """Dana asks Alice for permission, then introduces Ben: an introduction,
+    credited to Dana, with Alice as a party."""
+    d = detect(_asked_then_added(CONNECTOR, ALICE), principal=ALICE)
+
+    assert d.is_intro
+    assert d.is_confident
+    assert d.kind == "handoff"
+    assert "late_handoff" in d.signals
+    assert d.connector == CONNECTOR
+    assert set(d.parties) == {ALICE, BEN}
+    assert d.principal_role == "party"
+
+
+def test_principal_asks_and_the_connector_delivers():
+    """Alice asks Dana for an intro to Ben and Dana makes it. The request
+    became an introduction, so it is recorded as one."""
+    d = detect(_asked_then_added(ALICE, CONNECTOR), principal=ALICE)
+
+    assert d.is_intro
+    assert d.kind == "handoff"
+    assert d.connector == CONNECTOR
+    assert set(d.parties) == {ALICE, BEN}
+    assert d.principal_role == "party"
+
+
+def test_principal_delivers_an_intro_someone_asked_for():
+    """Ben asks Alice for an intro to Kai; Alice adds Kai and steps back."""
+    t = Thread(id="t_out", messages=[
+        msg(1, BEN, [ALICE], "Intro to Kai Rivera?",
+            "Would you be open to introducing me to Kai?", day=1),
+        msg(2, ALICE, [BEN, KAI], "Re: Intro to Kai Rivera?",
+            "Of course. Kai, meet Ben.", day=2),
+        msg(3, KAI, [BEN], "Re: Intro to Kai Rivera?",
+            "Moving Alice to bcc. Ben, happy to chat.", day=3),
+    ])
+    d = detect(t, principal=ALICE)
+
+    assert d.is_intro
+    assert d.kind == "handoff"
+    assert d.connector == ALICE
+    assert set(d.parties) == {BEN, KAI}
+    assert d.principal_role == "connector"
+
+
+def test_looping_in_someone_who_never_takes_over_is_not_a_handoff():
+    """Adding an assistant to schedule, while the person who added them stays
+    on every later message, is not an introduction."""
+    t = Thread(id="t_cc", messages=[
+        msg(1, CONNECTOR, [ALICE], "Coffee next week?", "Free Tuesday?", day=1),
+        msg(2, ALICE, [CONNECTOR, CARA], "Re: Coffee next week?",
+            "Adding Cara, who runs my calendar.", day=1),
+        msg(3, CARA, [ALICE, CONNECTOR], "Re: Coffee next week?",
+            "Tuesday at 10 works.", day=2),
+    ])
+    d = detect(t, principal=ALICE)
+
+    assert "late_handoff" not in d.signals
+    assert not d.is_intro
+
+
+def test_an_ask_that_went_nowhere_stays_a_request():
+    """Nobody new ever joins: still a request, still dropped by the scan."""
+    t = Thread(id="t_ask", messages=[
+        msg(1, ALICE, [CONNECTOR], "Intro to Ben Mercer?",
+            "Any chance you could introduce me to Ben?", day=1),
+        msg(2, CONNECTOR, [ALICE], "Re: Intro to Ben Mercer?",
+            "Let me check with him first.", day=2),
+    ])
+    d = detect(t, principal=ALICE)
+
+    assert d.kind == "request"
+    assert "late_handoff" not in d.signals
+
+
+def test_a_later_group_reply_does_not_count_as_a_handoff():
+    """A message that adds more people than an introduction has is a group
+    thread growing, not someone being introduced."""
+    crowd = [f"p{i}@thirdco.com" for i in range(6)]
+    t = Thread(id="t_grp", messages=[
+        msg(1, CONNECTOR, [ALICE], "Planning", "Thoughts?", day=1),
+        msg(2, CONNECTOR, [ALICE, *crowd], "Re: Planning", "Adding everyone.", day=2),
+        msg(3, crowd[0], [ALICE, crowd[1]], "Re: Planning", "Sounds good.", day=3),
+    ])
+    assert "late_handoff" not in detect(t, principal=ALICE).signals
+
+
+# Delegation has the same shape as an introduction: someone adds a person and
+# steps back. Found in review, 2026-09-21. On its own the handoff shape must not
+# make a thread an introduction; it needs a subject or wording that says so,
+# and a colleague from the sender's own company is never the introduced party.
+
+def test_an_assistant_who_takes_over_scheduling_is_not_an_introduction():
+    t = Thread(id="t_asst", messages=[
+        msg(1, BEN, [ALICE], "Coffee next week?", "Free Tuesday?", day=1),
+        msg(2, BEN, [ALICE, "cara@otherco.io"], "Re: Coffee next week?",
+            "Adding Cara, who runs my calendar.", day=1),
+        msg(3, "cara@otherco.io", [ALICE], "Re: Coffee next week?",
+            "Tuesday at 10 works.", day=2),
+    ])
+    d = detect(t, principal=ALICE)
+    assert not d.is_intro
+
+
+def test_a_recruiter_handing_off_to_the_hiring_manager_is_not_an_introduction():
+    t = Thread(id="t_rec", messages=[
+        msg(1, "recruiter@otherco.io", [ALICE], "Intro to our team",
+            "Great to talk today.", day=1),
+        msg(2, "recruiter@otherco.io", [ALICE, BEN], "Re: Intro to our team",
+            "Looping in Ben, the hiring manager.", day=2),
+        msg(3, BEN, [ALICE], "Re: Intro to our team", "Next steps?", day=3),
+    ])
+    assert "late_handoff" not in detect(t, principal=ALICE).signals
+
+
+def test_the_principal_handing_off_to_her_own_assistant_is_not_an_intro_she_made():
+    pat = "pat@examplecorp.com"
+    t = Thread(id="t_own", messages=[
+        msg(1, BEN, [ALICE], "Catch up", "When are you free?", day=1),
+        msg(2, ALICE, [BEN, pat], "Re: Catch up", "Pat will find a time.", day=1),
+        msg(3, pat, [BEN], "Re: Catch up", "How is Thursday?", day=2),
+    ])
+    assert not detect(t, principal=ALICE).is_intro
+
+
+def test_a_handoff_with_no_intro_subject_or_wording_is_not_enough():
+    t = Thread(id="t_bare", messages=[
+        msg(1, CONNECTOR, [ALICE], "Planning", "Thoughts?", day=1),
+        msg(2, CONNECTOR, [ALICE, BEN], "Re: Planning", "Adding Ben.", day=2),
+        msg(3, BEN, [ALICE], "Re: Planning", "Hi Alice.", day=3),
+    ])
+    d = detect(t, principal=ALICE)
+    assert "late_handoff" in d.signals
+    assert not d.is_intro
+
+
+def test_handoff_wording_in_the_handoff_message_counts():
+    """The words that make it an intro are in message 3, not message 1."""
+    t = Thread(id="t_words", messages=[
+        msg(1, CONNECTOR, [ALICE], "Quick question", "OK if I connect you?", day=1),
+        msg(2, ALICE, [CONNECTOR], "Re: Quick question", "Sure!", day=1),
+        msg(3, CONNECTOR, [ALICE, BEN], "Re: Quick question",
+            "Alice, I'd like to introduce you to Ben.", day=2),
+        msg(4, BEN, [ALICE], "Re: Quick question", "Moving Dana to bcc.", day=2),
+    ])
+    d = detect(t, principal=ALICE)
+    assert d.is_intro and d.connector == CONNECTOR
+
+
+def test_a_cold_pitch_that_the_principal_passes_on_is_still_an_intro():
+    """self_pitch disqualifies the pitch, not an introduction made from it."""
+    founder = "founder@fourthco.dev"
+    t = Thread(id="t_pitch", messages=[
+        msg(1, founder, [ALICE], "Introduction to Fourthco", "We build...", day=1),
+        msg(2, ALICE, [founder, CONNECTOR], "Re: Introduction to Fourthco",
+            "Dana, meet the founder. I think you two should meet.", day=2),
+        msg(3, CONNECTOR, [founder], "Re: Introduction to Fourthco",
+            "Moving Alice to bcc.", day=3),
+    ])
+    d = detect(t, principal=ALICE)
+    assert d.is_intro and d.connector == ALICE
+
+
+# --- three-person intros nobody drops off, 2026-09-21 ----------------------
+# Measured on 67 intros the CRM holds and the scan missed: about eight were a
+# plain three-person intro email with an intro subject, where everyone stayed
+# on reply-all or the thread ended at one message. three_party_open (0.10) +
+# subject_keyword (0.20) = 0.30, under the bar. A three-person opening is real
+# evidence; with an intro subject or intro wording, it is enough.
+
+@pytest.mark.parametrize("subject", [
+    "E-Intro", "Introduction - MFA program", "Intro: Nadia Okonjo // Alice Tran",
+    "Introductions", "Intros", "Introductions (re: the offsite)",
+])
+def test_a_three_person_email_with_an_intro_subject_is_an_intro(subject):
+    t = Thread(id="t_3p", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], subject, None, day=1),
+        msg(2, BEN, [CONNECTOR, ALICE], f"Re: {subject}", None, day=2),
+    ])
+    d = detect(t, principal=ALICE, mode="metadata")
+    assert d.is_intro, d
+    assert d.connector == CONNECTOR
+
+
+@pytest.mark.parametrize("subject", [
+    "Kai, meet Alice", "Ben meet Alice", "Re: Nadia, meet Ben",
+])
+def test_a_name_meet_name_subject_is_an_intro(subject):
+    t = Thread(id="t_meet", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], subject, None, day=1)])
+    d = detect(t, principal=ALICE, mode="metadata")
+    assert d.is_intro and "subject_meet" in d.signals
+
+
+@pytest.mark.parametrize("subject", [
+    "Meet the team at our booth", "Can we meet Tuesday?", "Meeting notes",
+    "Let's meet", "Come meet Ben at the offsite",
+    # found in review: capitalised lead words and time words
+    "Let's meet Tuesday", "Re: Let's meet Thursday", "Can't meet Friday",
+    "Lets meet Next Week", "Team meet Up", "Come meet Ben!", "Please meet Soon",
+])
+def test_meet_in_an_ordinary_subject_is_not_the_meet_signal(subject):
+    t = Thread(id="t_nm", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], subject, None, day=1)])
+    assert "subject_meet" not in detect(t, principal=ALICE).signals
+
+
+def test_a_three_person_email_with_intro_wording_in_the_body_is_an_intro():
+    t = Thread(id="t_3b", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Burma trip",
+            "I'd like to introduce you two — Ben just got back.", day=1)])
+    assert detect(t, principal=ALICE).is_intro
+
+
+def test_a_three_person_email_with_nothing_else_is_not_an_intro():
+    t = Thread(id="t_3n", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Q3 planning", "Agenda attached.", day=1),
+        msg(2, BEN, [CONNECTOR, ALICE], "Re: Q3 planning", "Thanks.", day=2),
+    ])
+    assert not detect(t, principal=ALICE).is_intro
+
+
+def test_a_three_person_email_with_a_separator_subject_alone_is_not_an_intro():
+    """'Drinks and dinner' to two friends is not an introduction."""
+    t = Thread(id="t_3s", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "drinks and dinner", None, day=1)])
+    assert not detect(t, principal=ALICE, mode="metadata").is_intro
+
+
+@pytest.mark.parametrize("query", [
+    "subject:intros", "subject:introductions", '"please meet"',
+    '"connect you with"', '"you should meet"', '"meet my"',
+    '"put you two in touch"', '"introduce you two"',
+    '"introduce the two of you"', '"e-intro"',
+])
+def test_the_net_carries_the_wording_it_was_measured_missing(query):
+    """Each found introductions the old net did not, on a 1,992-thread sample
+    of a real mailbox (2026-09-21). Gmail matches whole words, so
+    `subject:intro` does not find "Intros", and "put you in touch" does not
+    find "put you two in touch"."""
+    assert query in search_queries()
+
+
+def test_a_forwarded_newsletter_is_not_an_introduction():
+    """"Fwd: Introducing <a product>" sent to two friends is marketing passed
+    along. The only false positive in 59 new finds, 2026-09-21."""
+    body = ("A whole series!\n---------- Forwarded message ---------\n"
+            "From: Town Hall <news@example.com>\nSubject: Introducing")
+    t = Thread(id="t_fwdnews", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Fwd: Introducing the Salon Series", body)])
+    d = detect(t, principal=ALICE)
+    assert not d.is_intro and d.disqualified_by == "forwarded_bulk"
+
+
+def test_a_forwarded_intro_from_a_person_still_counts():
+    body = ("See below.\n---------- Forwarded message ---------\n"
+            f"From: Dana Okafor <{CONNECTOR}>\nTo: {ALICE}, {BEN}\n"
+            "I'd like to introduce you two.")
+    t = Thread(id="t_fwdok", messages=[
+        msg(1, BEN, [ALICE], "Fwd: Intro: Alice <> Ben", body)])
+    assert detect(t, principal=ALICE).is_intro
+
+
+def test_a_forwarded_newsletter_in_a_one_line_snippet_is_not_an_introduction():
+    """The connector's snippet collapses the body onto one line, so the quoted
+    From is not at the start of a line. Found in review, 2026-09-21."""
+    body = ("A whole series! - Nic ---------- Forwarded message --------- "
+            "From: Town Hall <news@example.com> Date: Mon")
+    t = Thread(id="t_fwd1", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Fwd: Introducing the Salon Series", body)])
+    assert detect(t, principal=ALICE).disqualified_by == "forwarded_bulk"
+
+
+def test_an_intro_that_quotes_a_newsletter_further_down_still_counts():
+    body = ("Alice, I'd like to introduce you to Ben. Context below.\n"
+            "---------- Forwarded message ---------\n"
+            "From: Substack <news@example.com>\n")
+    t = Thread(id="t_fwd2", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Alice <> Ben", body)])
+    assert detect(t, principal=ALICE).is_intro
+
+
+def test_a_person_named_in_a_quoted_display_name_is_judged_by_address():
+    """"From: Kai at Calendly <kai.rivera@example.com>" is a person."""
+    body = ("See below.\n---------- Forwarded message ---------\n"
+            f"From: Kai at Calendly <kai.rivera@example.com>\nTo: {ALICE}, {BEN}\n"
+            "I'd like to introduce you two.")
+    t = Thread(id="t_fwd3", messages=[
+        msg(1, BEN, [ALICE], "Fwd: Intro: Alice <> Ben", body)])
+    assert detect(t, principal=ALICE).disqualified_by != "forwarded_bulk"
+
+
+def test_news_at_is_a_whole_local_part():
+    t = Thread(id="t_news", messages=[
+        msg(1, "dana.news@example.com", [ALICE, BEN], "Alice <> Ben",
+            "I'd like to introduce you two.")])
+    assert detect(t, principal=ALICE).is_intro

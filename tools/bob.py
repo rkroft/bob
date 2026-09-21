@@ -13,6 +13,7 @@ without touching the mailbox.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import replace
 from datetime import date
@@ -32,9 +33,12 @@ from last_contact import is_automated, last_direct_contact  # noqa: E402
 from people_store import build_people, read_people, write_people  # noqa: E402
 from mbox_source import MboxSource  # noqa: E402
 from render import render  # noqa: E402
-from intro_detect import search_queries  # noqa: E402
+from intro_detect import (  # noqa: E402
+    HARD_NEGATIVE_SENDERS, REQUEST_SUBJECT, SUBJECT_ARROW, SUBJECT_INTRO_ONLY,
+    SUBJECT_KEYWORD, SUBJECT_PAIR_INTRO, detect, search_queries,
+)
 from scan import scan, scan_threads  # noqa: E402
-from connector_source import ConnectorSource  # noqa: E402
+from connector_source import ConnectorSource, missing_opener  # noqa: E402
 import bob_config  # noqa: E402
 from name_store import (  # noqa: E402
     Name, as_lookup, extract_quoted_names, merge, read_names, worklist,
@@ -314,7 +318,13 @@ def cmd_scan(args) -> int:
         rows = scan_threads(threads, source.principal(), link_for=link_for,
                             names_out=seen_names, contacted_out=contacted,
                             automated_out=automated)
+        # Every cut-off intro thread, whatever its markers say: a row built
+        # without its opener may credit a later replier. Counted, never
+        # silently kept.
+        pending, gave_up, absent = _openers(source)
+        unfetched, unrecoverable = len(pending), len(gave_up) + len(absent)
     else:
+        unfetched = unrecoverable = 0
         rows = scan(source, link_for=link_for, names_out=seen_names,
                     limit_per_query=args.limit_net, capped_out=capped,
                     contacted_out=contacted, automated_out=automated,
@@ -329,8 +339,9 @@ def cmd_scan(args) -> int:
     out = as_dir(args.out)
     write_intros(rows, out)
 
-    # The roster is derived, so it is rebuilt from scratch every scan — unlike
-    # intros.csv, which is a record of events and never rewritten.
+    # The roster is derived, so it is rebuilt from scratch every scan. So is
+    # intros.csv: write_intros replaces the file, and a row added by hand is
+    # gone after the next scan.
     people_path = as_dir(args.people)
     people = build_people(rows, source.principal(), names,
                           contacted=contacted, automated=automated)
@@ -359,6 +370,17 @@ def cmd_scan(args) -> int:
         for q in capped:
             print(f"     {q}")
         print("   Re-run with a higher --limit-net to go further back.")
+    # Plain words, no command: the user sees this line and cannot run the fix.
+    # bob-scan.md tells the agent what to do when it appears.
+    if unfetched:
+        print(f"\n⚠  {_n(unfetched, 'long thread', 'long threads')} still "
+              f"need their first email read. Until then, the introducer "
+              f"shown on those may be someone who replied later.")
+    if unrecoverable:
+        print(f"\n⚠  {_n(unrecoverable, 'long thread', 'long threads')} "
+              f"could not be read back to the first email (it failed, or the "
+              f"email is gone). The introducer shown on those may be someone "
+              f"who replied later.")
     if isinstance(source, ConnectorSource):
         # The connector's answer to `capped`. Same rule, different mechanism:
         # never let a bounded search pass for an exhaustive one.
@@ -663,6 +685,103 @@ def cmd_roster_todo(args) -> int:
     return 0
 
 
+#: Threads per opener-pass batch. Each is one `get_thread`.
+OPENER_BATCH = 25
+#: Failed fetches before a thread is given up on, as with the roster.
+OPENER_MAX_FAILURES = 2
+
+# Reply prefixes, including an out-of-office's, stripped before a subject is
+# read -- "Automatic reply: Intro: Alice <> Ben" is still that intro's subject.
+_REPLY_PREFIX = re.compile(
+    r"^\s*(?:(?:re|fwd?|aw|automatic reply|auto(?:-| )?reply|out of office)"
+    r"\s*:\s*)+", re.I)
+_INTRO_SUBJECT = (SUBJECT_ARROW, SUBJECT_KEYWORD, SUBJECT_INTRO_ONLY,
+                  SUBJECT_PAIR_INTRO, REQUEST_SUBJECT)
+
+
+def _worth_opening(t) -> bool:
+    """Does a cut-off thread look enough like an introduction to fetch?
+
+    Judged across every visible message, not by running `detect`: detect reads
+    the oldest *visible* message, which on a cut-off thread is a reply -- an
+    out-of-office or a reply-all that grew past six people would disqualify an
+    intro that is really there. Deliberately narrow: a separator word ("drinks
+    and dinner") or three people on a reply is not enough, because each fetch
+    costs the user tokens and a heavy mailbox has hundreds of long threads.
+    """
+    if not any(m.from_addr and not is_automated(m.from_addr)
+               and not HARD_NEGATIVE_SENDERS.search(m.from_addr)
+               for m in t.messages):
+        return False
+    for m in t.messages:
+        subject = _REPLY_PREFIX.sub("", m.subject or "")
+        if any(rx.search(subject) for rx in _INTRO_SUBJECT):
+            return True
+    # A handoff seen on a cut-off thread may be an artefact of the cut: the
+    # people on the missing messages all look newly added. Fetch to be sure.
+    # And anything already scoring as an intro: on a cut-off thread the
+    # snippet of a reply can carry the intro wording, crediting the replier.
+    d = detect(t)
+    return (bool({"structural_dropout", "late_handoff"} & set(d.signals))
+            or (d.is_intro and d.kind != "request"))
+
+
+def _openers(source: ConnectorSource) -> tuple[list, list, list]:
+    """Cut-off intro threads, split three ways: (to fetch, given up on,
+    fetched but the first email still absent).
+
+    Only the first list drives the loop. All three are disclosed by `scan`:
+    whatever the markers say, a row built without its opener may credit a
+    later replier. A thread marked fetched is never listed again -- a deleted
+    first email stays deleted.
+    """
+    todo, gave_up, absent = [], [], []
+    for t in source.all_threads():
+        if not missing_opener(t) or not _worth_opening(t):
+            continue
+        st = source.fetches.get(t.id)
+        if st and st["ok"]:
+            absent.append(t)
+        elif st and st["failures"] >= OPENER_MAX_FAILURES:
+            gave_up.append(t)
+        else:
+            todo.append(t)
+    newest = lambda t: max((m.date.timestamp() for m in t.messages if m.date),
+                           default=0)
+    todo.sort(key=newest, reverse=True)
+    return ([t.id for t in todo], sorted(t.id for t in gave_up),
+            sorted(t.id for t in absent))
+
+
+def cmd_scan_todo(args) -> int:
+    """Threads the agent should fetch whole before `scan` adjudicates.
+
+    `search_threads` shows only the newest five messages, so on a long
+    introduction thread the email that made the introduction is cut off and
+    the introducer comes out as a later replier. This names those threads; the
+    agent runs `get_thread` on each, appends the result and a `fetched`
+    marker, and asks again until the batch is empty.
+    """
+    import json
+    wanted = args.connector or (
+        [Path(args.data_dir) / "threads.jsonl"] if args.data_dir else [])
+    files = [f for f in wanted if Path(f).exists()]
+    if not files:
+        print("No scan file yet. The retrieval step in /bob-scan writes it.")
+        return 1
+    principal = _addresses(args.principal)
+    src = ConnectorSource((principal or [""])[0], files)
+    todo, gave_up, _ = _openers(src)
+    print(json.dumps({
+        "batch": todo[:args.batch],
+        "remaining": len(todo),
+        "done": sum(1 for st in src.fetches.values() if st["ok"]),
+        "gave_up": gave_up,
+        "format": "MINIMAL",
+    }, indent=2))
+    return 0
+
+
 def cmd_setup(args) -> int:
     """The only command that writes the address. Exit 2 = Bob still needs it,
     so the caller asks rather than reading the prose."""
@@ -864,6 +983,17 @@ def main(argv=None) -> int:
     rt.add_argument("--batch", type=int, default=ROSTER_BATCH,
                     help=f"people per batch (default {ROSTER_BATCH})")
     rt.set_defaults(fn=cmd_roster_todo)
+
+    st = sub.add_parser("scan-todo",
+                        help="long threads to fetch whole before the scan, "
+                             "so the introducer is the one who opened them")
+    st.add_argument("--connector", type=Path, nargs="+", metavar="FILE",
+                    help="the scan file(s) written so far")
+    st.add_argument("--principal", help="the mailbox owner's address")
+    st.add_argument("--data-dir", help="the user's Bob folder")
+    st.add_argument("--batch", type=int, default=OPENER_BATCH,
+                    help=f"threads per batch (default {OPENER_BATCH})")
+    st.set_defaults(fn=cmd_scan_todo)
 
     g = sub.add_parser("graph", help="read intros.csv, write network.html")
     g.add_argument("--intros", type=Path, default=None)

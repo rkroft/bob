@@ -116,9 +116,9 @@ def scan_threads(
     search. Both paths share this so a source can never quietly get different
     detection: the only difference between them is where the threads came from.
 
-    Bodies are optional. On the connector path `body_text` is None throughout,
-    which `_first_body` already reads as "no body" — so `detect` degrades to
-    its metadata signals without needing to be told which source it is on.
+    Bodies are optional. On the connector path `body_text` is the snippet, or
+    None when there is none, which `_first_body` reads as "no body" -- so
+    `detect` degrades to its metadata signals without being told the source.
     """
     rows: list[IntroRow] = []
     for thread in threads:

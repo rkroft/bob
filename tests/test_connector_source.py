@@ -62,13 +62,19 @@ def test_maps_the_fields_detection_reads():
     assert m.date is not None
 
 
-def test_body_is_none_because_this_path_has_no_bodies():
-    """Metadata mode is the shipping mode, not a degraded one.
+def test_the_snippet_becomes_the_body():
+    """Each message's snippet is its first ~200 characters, which is where
+    "I'd like to introduce you two" and "moving Dana to bcc" are written.
+    Measured 2026-09-21 on 36 missed intros: +2 found, 0 lost. The one false
+    positive it caused on 2026-09-02 was a request, which scan now drops."""
+    m = _msg("m1", CONNECTOR, [ALICE], "hi")
+    m["snippet"] = "Alice, I&#39;d like to introduce you to Ben"
+    t = thread_from_json(_thread("t1", [m]))
+    assert t.messages[0].body_text == "Alice, I'd like to introduce you to Ben"
 
-    `None` rather than `""` matters: `Message.body_text` is documented as None in
-    metadata mode, and `_first_body` treats a falsy body the same either way, but
-    an empty string would read as "the body was empty" to anyone debugging.
-    """
+
+def test_no_snippet_leaves_the_body_none():
+    """None, not "": an empty string would read as "the body was empty"."""
     t = thread_from_json(_thread("t1", [_msg("m1", CONNECTOR, [ALICE], "hi")]))
     assert t.messages[0].body_text is None
 
