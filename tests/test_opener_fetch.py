@@ -297,6 +297,8 @@ def test_a_cut_off_thread_showing_a_handoff_is_fetched_before_it_is_judged(
         _m("t6a", BEN, [ME], "Re: next week", "2026-03-02T10:00:00Z"),
         _m("t6b", BEN, [ME, KAI], "Re: next week", "2026-03-03T10:00:00Z"),
         _m("t6c", KAI, [ME], "Re: next week", "2026-03-04T10:00:00Z"),
+        _m("t6d", ME, [KAI], "Re: next week", "2026-03-05T10:00:00Z"),
+        _m("t6e", KAI, [ME], "Re: next week", "2026-03-06T10:00:00Z"),
     ]}
     f = _write(tmp_path / "threads.jsonl", [view])
     assert _todo(capsys, f)["batch"] == ["t6"]
@@ -308,5 +310,84 @@ def test_a_cut_off_thread_scoring_as_an_intro_on_its_snippet_is_fetched(
     replier. Fetch it before anyone is credited. Found in review, 2026-09-21."""
     m = _m("t4r", BEN, [ME, KAI], "Re: Burma trip", "2026-03-04T10:00:00Z")
     m["snippet"] = "Alice, you should meet Kai. I'd like to introduce you two."
-    f = _write(tmp_path / "threads.jsonl", [{"id": "t4", "messages": [m]}])
+    rest = [_m(f"t4r{i}", KAI if i % 2 else ME, [ME] if i % 2 else [KAI],
+               "Re: Burma trip", f"2026-03-{5 + i:02d}T10:00:00Z") for i in range(4)]
+    f = _write(tmp_path / "threads.jsonl", [{"id": "t4", "messages": [m] + rest}])
     assert _todo(capsys, f)["batch"] == ["t4"]
+
+
+# --- a thread the principal started ------------------------------------------
+# Measured 2026-09-21 on a real scan: 76 of 209 opener fetches were threads the
+# principal started. Gmail gives such a thread the id of the DRAFT it began as,
+# and drafts are never returned, so the id is missing from its own messages
+# even when every message is there. Search cuts a thread to exactly five, so
+# fewer than five shown means the thread is whole.
+
+def test_a_short_thread_whose_id_is_a_draft_is_whole():
+    t = thread_from_json({"id": "d1", "messages": [
+        _m("d1a", ME, [KAI], "Hello", "2026-02-09T18:19:27Z"),
+        _m("d1b", KAI, [ME], "Re: Hello", "2026-02-09T20:29:27Z")]})
+    assert not missing_opener(t)
+
+
+def test_a_long_thread_fetched_whole_is_whole_even_without_its_id():
+    msgs = [_m(f"d2{i}", ME if i % 2 else BEN, [BEN] if i % 2 else [ME],
+               "Intro: Alice <> Ben", f"2026-03-{1 + i:02d}T10:00:00Z")
+            for i in range(8)]
+    assert not missing_opener(thread_from_json({"id": "d2", "messages": msgs}))
+
+
+def test_scan_does_not_warn_about_a_short_thread_it_never_needed_to_fetch(
+        tmp_path, capsys):
+    view = {"id": "d3", "messages": [
+        _m("d3a", DANA, [ME, BEN], "Intro: Alice <> Ben", "2026-03-01T10:00:00Z"),
+        _m("d3b", BEN, [ME], "Re: Intro: Alice <> Ben", "2026-03-02T10:00:00Z")]}
+    f = _write(tmp_path / "threads.jsonl", [view])
+    assert _todo(capsys, f)["batch"] == []
+    assert _scan(tmp_path, f) == 0
+    assert "first email" not in capsys.readouterr().out
+
+
+
+def test_a_fetched_long_thread_still_missing_its_first_email_is_disclosed(
+        tmp_path, capsys):
+    """Fetched whole, eight messages, and the first one deleted: that is the
+    case the disclosure exists for. Found in review, 2026-09-21."""
+    # The oldest message left is Ben's reply: Dana's opener is the one gone.
+    whole = [_m(f"t9r{i}", ME if i % 2 else BEN, [BEN] if i % 2 else [ME],
+                "Re: Intro: Alice <> Ben", f"2026-03-{2 + i:02d}T10:00:00Z")
+             for i in range(8)]
+    f = _write(tmp_path / "threads.jsonl", [
+        {"id": "t9", "messages": whole[-5:]}, {"id": "t9", "messages": whole},
+        {"fetched": "t9", "status": "ok"}])
+    assert _scan(tmp_path, f) == 0
+    assert "could not be read back" in capsys.readouterr().out
+
+
+def test_a_fetched_thread_the_principal_started_is_not_disclosed(tmp_path, capsys):
+    """Her own threads carry the id of the draft they began as, so a whole
+    fetched copy still lacks the thread id. The oldest message held is hers:
+    nothing is missing. 10 of 10 such warnings were false on a real scan
+    (gate review, 2026-09-21)."""
+    whole = [_m(f"u{i}", ME if i % 2 == 0 else BEN, [BEN] if i % 2 == 0 else [ME],
+                "Intro: Alice <> Ben", f"2026-03-{2 + i:02d}T10:00:00Z")
+             for i in range(8)]
+    f = _write(tmp_path / "threads.jsonl", [
+        {"id": "u", "messages": whole[-5:]}, {"id": "u", "messages": whole},
+        {"fetched": "u", "status": "ok"}])
+    assert _scan(tmp_path, f) == 0
+    assert "could not be read back" not in capsys.readouterr().out
+
+
+def test_a_deleted_opener_under_the_principals_reply_is_still_disclosed(
+        tmp_path, capsys):
+    """Her oldest surviving message is a reply ("Re:"), so something came
+    before it: not a thread she started."""
+    whole = [_m(f"v{i}", ME if i % 2 == 0 else BEN, [BEN] if i % 2 == 0 else [ME],
+                "Re: Intro: Alice <> Ben", f"2026-03-{2 + i:02d}T10:00:00Z")
+             for i in range(8)]
+    f = _write(tmp_path / "threads.jsonl", [
+        {"id": "v", "messages": whole[-5:]}, {"id": "v", "messages": whole},
+        {"fetched": "v", "status": "ok"}])
+    assert _scan(tmp_path, f) == 0
+    assert "could not be read back" in capsys.readouterr().out

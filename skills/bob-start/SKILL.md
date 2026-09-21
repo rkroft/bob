@@ -29,6 +29,7 @@ You stop and wait only when:
 - **no mail source works** — bob-setup §3's one question,
 - **their address can't be read** — ask for it,
 - **the folder may not persist** — preflight exit 2, ask its question,
+- **two addresses may be one person** — §4, one question per pair,
 - **the graph is done** — item 5.
 
 Anything else goes straight on.
@@ -161,6 +162,31 @@ python3 "<bob.py>" graph --data-dir "<folder>"
 ```
 
 Then show what the scan printed and the link, as `commands/bob-scan.md` says.
+
+**Then check for one person under two addresses.** People introduce from a
+work address one year and a personal one the next, and each address would be
+ranked as its own introducer:
+
+```bash
+python3 "<bob.py>" same-person-todo --data-dir "<folder>"
+```
+
+On a first run ask at most the first three: the rest wait for the next scan.
+For each pair you ask, one at a time, in plain words, and wait:
+
+> Are these the same person? dokafor@example.com (2 intros) and
+> okafor@otherco.io (1)
+
+Record each answer as it comes:
+
+```bash
+python3 "<bob.py>" same-person "<first>" "<second>" --yes --data-dir "<folder>"
+```
+
+(`--no` for different people.) Never answer for them, and never merge on your
+own judgment: only the user knows. If they'd rather skip, stop asking; the
+pairs come back after the next scan. After the last answer, if any was yes,
+run `graph` once more and show the new ranking.
 
 ## 5. What next
 

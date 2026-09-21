@@ -234,3 +234,21 @@ def test_the_bracket_is_still_reachable_without_the_ring():
 def test_the_panel_does_not_point_at_a_picture_that_is_gone():
     markup, _, _ = ring_pane(G, principal=ME)
     assert "ringed node" not in markup
+
+
+def test_platforms_programs_and_ai_connectors_are_drawn_as_non_people():
+    """They stay on the ring (Rachel, 2026-09-21) in the non-person colour,
+    and the hover names what they are."""
+    from datetime import date
+    from graph_model import build_graph
+    from intro_store import IntroRow
+    from people_store import Person
+    from render_ring import ring_entries
+    me = "alice.tran@examplecorp.com"
+    rows = [IntroRow(f"t{i}", "2026-01-01", "inbound", "talent@example.com",
+                     (me, f"p{i}@otherco.io"), "Intro", "", 0.9) for i in range(3)]
+    g = build_graph(rows, me, today=date(2026, 8, 20))
+    people = [Person("talent@example.com", "talent@example.com", kind="platform")]
+    [e] = ring_entries(g, me, people)
+    assert e.is_service
+    assert "platform" in e.label

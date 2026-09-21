@@ -62,6 +62,8 @@ from datetime import date  # noqa: E402
 from graph_model import build_graph  # noqa: E402
 from intro_store import IntroRow, write_intros  # noqa: E402
 
+from people_store import AI_CONNECTOR_DOMAINS  # noqa: E402
+BOT = "bot@" + sorted(AI_CONNECTOR_DOMAINS)[0]
 ME = "alice.tran@examplecorp.com"
 
 
@@ -1077,3 +1079,35 @@ def test_reset_dates_lets_a_pass_correct_an_overstated_date(tmp_path):
     assert got[DANA] == "2026-06-15"
     # Ben was not asked about: a reset must not blank what it didn't check.
     assert got[BEN] == "2026-07-01"
+
+
+def test_the_ranking_calls_out_platforms_programs_and_ai_connectors():
+    """Rachel, 2026-09-21: platforms and programs stay in the stack rank,
+    called out as what they are."""
+    from people_store import Person
+    rows = []
+    for addr, n in [("dana.okafor@example.com", 4), ("talent@example.com", 3),
+                    (BOT, 2), ("ben.mercer@otherco.io", 2)]:
+        rows += [IntroRow(f"{addr}{i}", "2026-01-01", "inbound", addr, (ME,),
+                          "Intro", "", 0.9) for i in range(n)]
+    g = build_graph(rows, ME, today=date(2026, 8, 20))
+    people = [Person("talent@example.com", "talent@example.com", kind="platform"),
+              Person(BOT, "Boardy", kind="ai_connector"),
+              Person("ben.mercer@otherco.io", "Ben Mercer", kind="program",
+                     program="Founders Lab 2025")]
+    text = bob.summary(g, ME, people)
+    line = {k: next(ln for ln in text.splitlines() if k in ln)
+            for k in ("Dana", "talent@", "AI connector", "Founders Lab")}
+    assert "·" not in line["Dana"]
+    assert "platform" in line["talent@"]
+    assert line["AI connector"].strip().startswith("Bot")
+    assert "program" in line["Founders Lab"] and "via Ben Mercer" in line["Founders Lab"]
+    # still ranked together: Dana first, the platform second
+    order = [ln for ln in text.splitlines() if re.search(r"\s\d+ intros?$", ln)
+             and "you made" not in ln]
+    assert "Dana" in order[0] and "talent@" in order[1]
+
+
+def test_the_ranking_without_a_roster_is_unchanged():
+    g = build_graph(_rows(), ME, today=date(2026, 8, 20))
+    assert bob.summary(g, ME) == bob.summary(g, ME, None)

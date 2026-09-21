@@ -46,9 +46,11 @@ Search Gmail:
   The count the search reports is an estimate; don't stop at it, and never
   stop after the first page. That is the failure this skill exists for.
 
-For each thread, the search shows **only its newest five messages**. When the
-thread's id is not among the ids of the messages you were shown, the first
-email is cut off, and the first email is where an introduction happens. Run
+For each thread, the search shows **only its newest five messages**. When it
+shows exactly five and the thread's id is not among their ids, the first email
+is cut off, and the first email is where an introduction happens. (Fewer than
+five shown means the thread is whole; a thread the user started never carries
+its own id.) Run
 `get_thread` with `messageFormat: PLAIN_TEXT` on that thread before judging it.
 
 If that comes to more than 100 threads, say the number and ask before going on.

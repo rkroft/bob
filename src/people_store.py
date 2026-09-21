@@ -12,6 +12,7 @@ rewritten by every scan, so neither holds anything a scan cannot reproduce.
 from __future__ import annotations
 
 import csv
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,7 +22,7 @@ from intro_store import IntroRow
 
 PEOPLE_COLUMNS = (
     "address", "name", "intros_for_you", "intros_you_made", "introduced_you_to",
-    "is_service", "last_contact",
+    "is_service", "last_contact", "kind", "program",
 )
 
 SEP = ";"
@@ -91,6 +92,12 @@ class Person:
     # or "" when no direct exchange was found. Empty means "not known", never
     # "never" -- Bob sees one channel and cannot assert absence (§4.6).
     last_contact: str = ""
+    # What sort of introducer this is: "person", "platform" (a matching
+    # service writing from a role address), "ai_connector", or "program"
+    # (one person sending templated matches for a program, named in
+    # `program`). Everyone stays in the ranking; the kind says what they are.
+    kind: str = "person"
+    program: str = ""
 
 
 def name_from_address(addr: str) -> str:
@@ -120,6 +127,59 @@ def name_from_address(addr: str) -> str:
     return " ".join(w.capitalize() for w in words) or addr
 
 
+# AI connectors that write the introduction themselves. A named list: there is
+# nothing in the mail that tells a matching bot from a person with a template.
+AI_CONNECTOR_DOMAINS = frozenset({"boardy.ai"})
+
+# A program's intros share a subject prefix before a separator, e.g.
+# "Founders Lab 2025 - <startup> connection to <you>".
+_PREFIX_SEP = re.compile(r"\s+[-–—|:]\s+|:\s+")
+# Intro wording anywhere in the prefix: "Warm intro - X" and "Double opt-in:
+# X" are a connector's habit, not a program.
+_INTRO_WORDS = re.compile(
+    r"\b(?:intro\w*|connect\w*|opt-?in|meet\w*|request)\b", re.I)
+# "[EXT] ", "AW: ", "Re: " ahead of the subject a program actually uses.
+_LEAD = re.compile(
+    r"^\s*(?:\[[^\]]{1,20}\]\s*|(?:re|aw|sv|wg|tr|fwd?|fw)\s*:\s*)+", re.I)
+PROGRAM_MIN = 3
+
+
+def _program_of(subjects: Sequence[str]) -> str:
+    """The prefix most of someone's intro subjects share, if it names something.
+
+    "Intro - X" does not: a connector with a habit is still a person. Nor do a
+    few event forwards among many intros -- the prefix must cover most of them.
+    """
+    counts: dict = defaultdict(int)
+    for subj in subjects:
+        head = _PREFIX_SEP.split(_LEAD.sub("", subj or ""), 1)
+        if len(head) < 2:
+            continue
+        prefix = head[0].strip()
+        if len(prefix) >= 8 and not _INTRO_WORDS.search(prefix):
+            counts[prefix] += 1
+    best = max(counts.items(), key=lambda kv: kv[1], default=("", 0))
+    if best[1] >= PROGRAM_MIN and best[1] * 2 >= len(subjects):
+        return best[0]
+    return ""
+
+
+def introducer_kind(address: str, subjects: Sequence[str],
+                    automated: bool = False) -> tuple:
+    """(kind, program) for someone who introduced the principal to people."""
+    domain = address.partition("@")[2].lower()
+    if domain in AI_CONNECTOR_DOMAINS:
+        return "ai_connector", ""
+    local = address.partition("@")[0].lower()
+    # Two or more: a founder at hello@ who made one introduction is a person.
+    if subjects and (automated or (local in _ROLE_LOCAL and len(subjects) >= 2)):
+        return "platform", ""
+    program = _program_of(subjects)
+    if program:
+        return "program", program
+    return "person", ""
+
+
 def build_people(
     rows: Sequence[IntroRow], principal: str, names: Mapping[str, str],
     contacted=None, automated=None,
@@ -131,6 +191,7 @@ def build_people(
     for_you: dict = defaultdict(int)
     you_made: dict = defaultdict(int)
     introduced: dict = defaultdict(set)
+    subjects: dict = defaultdict(list)
     seen: set = set()
 
     for r in rows:
@@ -138,6 +199,7 @@ def build_people(
             seen.add(r.introducer)
             if r.direction == "inbound":
                 for_you[r.introducer] += 1
+                subjects[r.introducer].append(r.subject)
                 # Who this person put in front of you — the principal is an
                 # endpoint of that edge but is not someone they introduced you to.
                 introduced[r.introducer].update(
@@ -154,11 +216,34 @@ def build_people(
             intros_you_made=you_made[a],
             introduced_you_to=tuple(sorted(introduced[a])),
             is_service=is_service(a, contacted, a in automated),
+            kind=kind,
+            program=program,
         )
         for a in sorted(seen)
+        for kind, program in [introducer_kind(a, subjects[a], a in automated)]
     ]
     people.sort(key=lambda p: (-p.intros_for_you, -p.intros_you_made, p.address))
     return people
+
+
+_KIND_TAG = {"platform": "platform", "ai_connector": "AI connector",
+             "program": "program"}
+
+
+def display_label(addr: str, label: str, person) -> str:
+    """A ranked name, with what kind of introducer it is when it is not
+    a person. A program is named for the program, and the person who sent
+    its introductions is named after it."""
+    kind = getattr(person, "kind", "person")
+    if kind == "program" and person.program:
+        return f"{person.program} · program (via {label})"
+    if kind == "platform":
+        # The address, not a name: "talent@" capitalised is a person called
+        # "Talent", which is the invented-name failure people_store guards.
+        return f"{addr} · platform"
+    if kind in _KIND_TAG:
+        return f"{label} · {_KIND_TAG[kind]}"
+    return label
 
 
 def write_people(people: Sequence[Person], path: Path) -> None:
@@ -170,7 +255,8 @@ def write_people(people: Sequence[Person], path: Path) -> None:
             w.writerow([p.address, _safe_cell(p.name),
                         p.intros_for_you, p.intros_you_made,
                         SEP.join(p.introduced_you_to),
-                        "1" if p.is_service else "", p.last_contact])
+                        "1" if p.is_service else "", p.last_contact,
+                        p.kind, _safe_cell(p.program)])
 
 
 def read_people(path: Path) -> list:
@@ -189,5 +275,8 @@ def read_people(path: Path) -> list:
                 is_service=bool(d.get("is_service")),
                 # .get, not [] -- 522 rows predate this column.
                 last_contact=(d.get("last_contact") or ""),
+                # .get again: files written before 0.1.13 have no kind.
+                kind=(d.get("kind") or "person"),
+                program=(d.get("program") or ""),
             ))
     return out

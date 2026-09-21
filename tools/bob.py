@@ -13,6 +13,7 @@ without touching the mailbox.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import re
 import sys
 from dataclasses import replace
@@ -30,7 +31,10 @@ from scan_coverage import Coverage, beside, read_coverage  # noqa: E402
 from intro_store import read_intros, write_intros  # noqa: E402
 from mail_source import best_name, normalize_addr  # noqa: E402
 from last_contact import is_automated, last_direct_contact  # noqa: E402
-from people_store import build_people, read_people, write_people  # noqa: E402
+import same_person  # noqa: E402
+from people_store import (  # noqa: E402
+    build_people, display_label, read_people, write_people,
+)
 from mbox_source import MboxSource  # noqa: E402
 from render import render  # noqa: E402
 from intro_detect import (  # noqa: E402
@@ -343,7 +347,11 @@ def cmd_scan(args) -> int:
     # intros.csv: write_intros replaces the file, and a row added by hand is
     # gone after the next scan.
     people_path = as_dir(args.people)
-    people = build_people(rows, source.principal(), names,
+    # The ranking folds each confirmed "same person" pair under one address;
+    # intros.csv, written above, keeps what the mail said.
+    ranked = same_person.apply(rows, same_person.read_answers(
+        out.parent / same_person.FILE))
+    people = build_people(ranked, source.principal(), names,
                           contacted=contacted, automated=automated)
     write_people(people, people_path)
 
@@ -447,9 +455,12 @@ def _n(count: int, singular: str, plural: str = None) -> str:
     return f"{count} {singular if count == 1 else (plural or singular + 's')}"
 
 
-def summary(graph, principal: str) -> str:
+def summary(graph, principal: str, people=None) -> str:
     """What Rachel reads. Spec §7.1: scope before numbers, the three
-    populations, and concentration as the reveal rather than a count."""
+    populations, and concentration as the reveal rather than a count.
+
+    Platforms, programs and AI connectors stay in the ranking, called out as
+    what they are (Rachel, 2026-09-21)."""
     s = graph.stats
     if not s or not s.intros:
         return "No introductions found."
@@ -484,9 +495,11 @@ def summary(graph, principal: str) -> str:
                       f" for {round(100 * share / total)}% of everyone",
                   "   you've been introduced to.", ""]
         label = {n.id: n.label for n in graph.nodes}
+        who = {p.address: p for p in (people or [])}
         for addr, n in graph.top_connectors[:LEADERBOARD]:
-            lines.append(f"   {label.get(addr, addr.partition('@')[0]):<24} "
-                         f"{_n(n, 'intro')}")
+            name = display_label(addr, label.get(addr, addr.partition('@')[0]),
+                                 who.get(addr))
+            lines.append(f"   {name:<24} {_n(n, 'intro')}")
         # Named set is capped (graph_model.SUPER_CONNECTOR_CAP); when there
         # are more introducers than the list names, say so instead of letting
         # the list read as the whole population.
@@ -739,11 +752,27 @@ def _openers(source: ConnectorSource) -> tuple[list, list, list]:
     first email stays deleted.
     """
     todo, gave_up, absent = [], [], []
+    me = {a.lower() for a in _addresses(source.principal())}
     for t in source.all_threads():
-        if not missing_opener(t) or not _worth_opening(t):
-            continue
         st = source.fetches.get(t.id)
-        if st and st["ok"]:
+        # Fetched whole, a thread still without its id may have lost its first
+        # email -- unless the oldest message held is the principal's: a thread
+        # they started carries the id of the draft it began as, and nothing is
+        # missing (10 of 10 such warnings were false on a real scan).
+        # Unfetched, only a thread search cut to five can be missing it.
+        fetched_ok = bool(st and st["ok"])
+        if fetched_ok:
+            first = t.messages[0] if t.messages else None
+            # Theirs and not a reply: they started it. Their "Re:" as the
+            # oldest left means something came before it.
+            started = bool(first and first.from_addr.lower() in me
+                           and not _REPLY_PREFIX.match(first.subject or ""))
+            cut = t.id not in {m.id for m in t.messages if m.id} and not started
+        else:
+            cut = missing_opener(t)
+        if not cut or not _worth_opening(t):
+            continue
+        if fetched_ok:
             absent.append(t)
         elif st and st["failures"] >= OPENER_MAX_FAILURES:
             gave_up.append(t)
@@ -896,12 +925,81 @@ def cmd_graph(args) -> int:
     # the local part and everything still works — just less legibly.
     roster = read_people(Path(args.people))
     names = {p.address: p.name for p in roster}
+    rows = same_person.apply(rows, same_person.read_answers(
+        Path(args.intros).parent / same_person.FILE))
     graph = build_graph(rows, args.principal, today=date.today(), names=names)
     out = Path(args.out)
     render(graph, out, principal=args.principal, people=roster,
            intros=rows)
-    print(summary(graph, args.principal))
+    print(summary(graph, args.principal, roster))
     print(f"\nYour graph: {out}")
+    return 0
+
+
+def cmd_same_person_todo(args) -> int:
+    """Pairs of addresses that look like one person, for the agent to ask
+    about one at a time. Only pairs that change the ranking."""
+    import json
+    rows = read_intros(Path(args.intros))
+    folder = Path(args.intros).parent
+    answers = same_person.read_answers(folder / same_person.FILE)
+    todo = same_person.pending(rows, answers, principal=args.principal or "")
+    # `merged` is the one place skills learn who was folded into whom -- never
+    # re-derive it from same-person.csv, whose rules (last answer wins, a "no"
+    # blocks its group) live in same_person.canonical.
+    merged = same_person.canonical(rows, answers)
+    print(json.dumps({"ask": [{"addresses": [a, b], "intros": [na, nb],
+                               "why": why} for a, b, why, na, nb in todo],
+                      "merged": merged,
+                      "write_to": same_person.write_to(rows, merged)},
+                     indent=2))
+    return 0
+
+
+def cmd_same_person(args) -> int:
+    """Record the user's answer for one pair. Only the user decides this."""
+    folder = Path(args.intros).parent
+    a, b = args.a.strip().lower(), args.b.strip().lower()
+    seen = set()
+    if Path(args.intros).exists():
+        for r in read_intros(Path(args.intros)):
+            seen.add(r.introducer)
+            seen.update(r.introduced)
+    # The file is the user's permanent record: a typo written there stays.
+    if a == b or a not in seen or b not in seen:
+        print(f"Not recorded: {args.a} and {args.b} must be two different "
+              f"addresses from your introductions.")
+        return 1
+    same_person.record(folder / same_person.FILE, a, b, args.yes)
+    # The roster follows at once, so everything that reads people.csv sees
+    # one person without waiting for a rescan. What only the scan knows --
+    # the service check, last contact -- carries over from the old rows.
+    people_path = Path(args.people)
+    if people_path.exists() and Path(args.intros).exists() and args.principal:
+        old = {p.address: p for p in read_people(people_path)}
+        rows = same_person.apply(read_intros(Path(args.intros)),
+                                 same_person.read_answers(folder / same_person.FILE))
+        head = same_person.canonical(rows, same_person.read_answers(
+            folder / same_person.FILE))
+        members: dict = {}
+        for a, h in head.items():
+            members.setdefault(h, []).append(a)
+        # Platforms the scan saw as automated stay platforms: the rewrite has
+        # no mail to re-derive that from.
+        fresh = build_people(rows, args.principal,
+                             {a: p.name for a, p in old.items()},
+                             automated={a for a, p in old.items()
+                                        if p.kind == "platform"})
+        out = []
+        for p in fresh:
+            group = [p.address] + members.get(p.address, [])
+            was = [old[a] for a in group if a in old]
+            out.append(dataclasses.replace(
+                p, is_service=any(w.is_service for w in was),
+                last_contact=max((w.last_contact for w in was), default="")))
+        write_people(out, people_path)
+    print(f"noted: {args.a} and {args.b} are "
+          f"{'the same person' if args.yes else 'different people'}")
     return 0
 
 
@@ -1007,6 +1105,25 @@ def main(argv=None) -> int:
     g.add_argument("--data-dir", help="the user's Bob folder; files and the "
                    "saved address are read from it")
     g.set_defaults(fn=cmd_graph, needs_principal=True)
+
+    sp = sub.add_parser("same-person-todo",
+                        help="address pairs that may be one person, to ask about")
+    sp.add_argument("--intros", type=Path, default=None)
+    sp.add_argument("--principal", help="your address")
+    sp.add_argument("--data-dir", help="the user's Bob folder")
+    sp.set_defaults(fn=cmd_same_person_todo)
+
+    sa = sub.add_parser("same-person", help="record the user's answer for a pair")
+    sa.add_argument("a")
+    sa.add_argument("b")
+    yn = sa.add_mutually_exclusive_group(required=True)
+    yn.add_argument("--yes", action="store_true", help="the same person")
+    yn.add_argument("--no", action="store_true", help="different people")
+    sa.add_argument("--intros", type=Path, default=None)
+    sa.add_argument("--people", type=Path, default=None)
+    sa.add_argument("--principal", help="your address")
+    sa.add_argument("--data-dir", help="the user's Bob folder")
+    sa.set_defaults(fn=cmd_same_person)
 
     su = sub.add_parser("setup", help="create the Bob folder and save your "
                         "address in it, so later commands need neither")

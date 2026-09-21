@@ -114,7 +114,11 @@ output for an intro nobody can say anything about.
 
 **Thank-yous**, for intros that took hold. Grouped by introducer, one email each,
 one line per intro, most-impactful first so the first line they read is the good
-one.
+one. One person can sit in `intros.csv` under two addresses the user said are
+theirs. `python3 "<bob.py>" same-person-todo --data-dir "<folder>"` prints a
+`merged` map, address → the address they are ranked under: group by the second.
+Address the email to `write_to[that address]` when it has an entry — the one
+they used most recently — and otherwise to that address.
 
 **Late replies**, for recent intros that never landed. Addressed to the person
 they were introduced to, *not* the introducer. Short and unfussy — the note that

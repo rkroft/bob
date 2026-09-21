@@ -120,6 +120,10 @@ def read_jsonl(path: Path, on_skip: "Optional[Callable[[str], None]]" = None
                 continue
 
 
+# `search_threads` shows at most this many messages of a thread, the newest.
+SEARCH_CAP = 5
+
+
 def missing_opener(thread: Thread) -> bool:
     """True when the thread's first email is not among the messages we hold.
 
@@ -131,9 +135,17 @@ def missing_opener(thread: Thread) -> bool:
 
     A thread whose messages carry no ids is never called truncated: that is
     "cannot tell", and guessing would send the agent to fetch for nothing.
+
+    Nor is one showing anything but exactly SEARCH_CAP messages. A thread the
+    principal started carries the id of the draft it began as, and drafts are
+    never returned, so its id is missing from its own messages even when all
+    of them are there -- 76 of 209 fetches on a real scan (2026-09-21). Search
+    cuts a thread to exactly SEARCH_CAP; fewer means it is whole, and more
+    means it was already fetched whole.
     """
     ids = {m.id for m in thread.messages if m.id}
-    return bool(ids) and bool(thread.id) and thread.id not in ids
+    return (bool(ids) and bool(thread.id) and thread.id not in ids
+            and len(thread.messages) == SEARCH_CAP)
 
 
 def _key(m: Message) -> tuple:

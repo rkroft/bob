@@ -31,8 +31,9 @@ open is not an acceptable default.
 
 ## The schema
 
-Two tables, mirroring the two files field-for-field. No derived fields, no
-schema you invent, nothing that is not a fact from the mail.
+Two tables, from the two files: the fields below and no others (People leaves
+out `is_service`, `kind` and `program`). No derived fields, no schema you
+invent, nothing that is not a fact from the mail.
 
 **Introductions** — one row per introduction, not per edge.
 
@@ -48,7 +49,13 @@ schema you invent, nothing that is not a fact from the mail.
 | Confidence | number (2 dp) | `confidence` |
 | Outcome | long text | `outcomes.md`, keyed by thread — blank when not collected |
 
-**People** — one row per person.
+**People** — one row per person. `people.csv` already folds each pair the user
+confirmed is one person into one row. `python3 "<bob.py>" same-person-todo
+--data-dir "<folder>"` prints the `merged` map (address → the address it is
+ranked under); never work it out from `same-person.csv` yourself. A People row
+in the base whose address is a key in `merged` gets its counts set to 0 and
+"same person as <its merged address>" in *Introduced you to*; it is never
+deleted.
 
 | Field | Type | Source |
 |---|---|---|

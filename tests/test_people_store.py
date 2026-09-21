@@ -7,6 +7,8 @@ All people here are invented placeholders (repo rule — never real contacts).
 from __future__ import annotations
 
 import sys
+
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -16,6 +18,8 @@ from people_store import (  # noqa: E402
     PEOPLE_COLUMNS, Person, build_people, read_people, write_people,
 )
 
+from people_store import AI_CONNECTOR_DOMAINS  # noqa: E402
+BOT = "bot@" + sorted(AI_CONNECTOR_DOMAINS)[0]
 ME = "alice.tran@examplecorp.com"
 DANA = "dana.okafor@example.com"
 BEN = "ben.mercer@otherco.io"
@@ -156,3 +160,90 @@ def test_a_real_person_still_gets_a_readable_fallback():
     from people_store import name_from_address
     assert name_from_address("dana.okafor@example.com") == "Dana Okafor"
     assert name_from_address("ben_mercer@otherco.io") == "Ben Mercer"
+
+
+# -- what kind of introducer: person, platform, AI connector, program -------
+# 2026-09-21: on a real first scan the stack rank read Jen, Levi, then a
+# talent-matching product's no-reply address and a mentor program's
+# coordinator. Rachel: platforms and programs stay in the ranking, called
+# out as what they are.
+
+def srow(tid, introducer, subject, date="2026-01-01"):
+    return IntroRow(thread_id=tid, date=date, direction="inbound",
+                    introducer=introducer, introduced=(ME, BEN),
+                    subject=subject, thread_link="", confidence=0.9)
+
+
+def _kind(people, addr):
+    return next((p.kind, p.program) for p in people if p.address == addr)
+
+
+def test_a_person_is_a_person():
+    people = build_people([srow("1", DANA, "Intro: Alice <> Ben")], ME, {})
+    assert _kind(people, DANA) == ("person", "")
+
+
+def test_a_role_address_that_introduces_repeatedly_is_a_platform():
+    tal = "talent@example.com"
+    rows = [srow(str(i), tal, f"Intro - Alice, Ben ({i})") for i in range(3)]
+    assert _kind(build_people(rows, ME, {}), tal)[0] == "platform"
+
+
+def test_a_founder_at_hello_who_made_one_intro_is_still_a_person():
+    hello = "hello@otherco.io"
+    people = build_people([srow("1", hello, "Intro: Alice <> Ben")], ME, {})
+    assert _kind(people, hello)[0] == "person"
+
+
+def test_a_known_ai_connector_is_labelled_as_one():
+    bot = BOT
+    people = build_people([srow("1", bot, "Boardy Intro: Alice + Ben")], ME, {})
+    assert _kind(people, bot)[0] == "ai_connector"
+
+
+def test_templated_intros_from_one_person_are_a_program():
+    rows = [srow(str(i), DANA, f"Founders Lab 2025 - Startup{i} connection to Alice")
+            for i in range(4)]
+    assert _kind(build_people(rows, ME, {}), DANA) == ("program", "Founders Lab 2025")
+
+
+def test_a_connector_who_always_writes_intro_x_is_not_a_program():
+    rows = [srow(str(i), DANA, f"Intro: Alice <> Person{i}") for i in range(5)]
+    rows += [srow("x", DANA, "Intro - Alice, Ben")]
+    assert _kind(build_people(rows, ME, {}), DANA)[0] == "person"
+
+
+def test_kind_survives_a_round_trip(tmp_path):
+    rows = [srow(str(i), DANA, f"Founders Lab 2025 - S{i} connection") for i in range(3)]
+    p = tmp_path / "people.csv"
+    write_people(build_people(rows, ME, {}), p)
+    assert _kind(read_people(p), DANA) == ("program", "Founders Lab 2025")
+
+
+def test_a_people_csv_written_before_kind_existed_reads_as_people(tmp_path):
+    p = tmp_path / "people.csv"
+    p.write_text("address,name,intros_for_you,intros_you_made,introduced_you_to,"
+                 "is_service,last_contact\n" + DANA + ",Dana,1,0,,,\n")
+    assert _kind(read_people(p), DANA) == ("person", "")
+
+
+
+@pytest.mark.parametrize("prefix", ["Warm intro", "[External] Intro",
+                                    "Intro request", "Double opt-in",
+                                    "Connecting you two"])
+def test_an_intro_phrase_is_not_a_program(prefix):
+    rows = [srow(str(i), DANA, f"{prefix} - Person{i}") for i in range(4)]
+    assert _kind(build_people(rows, ME, {}), DANA)[0] == "person"
+
+
+def test_a_connector_who_forwarded_a_few_event_intros_is_still_a_person():
+    """Three Tech Week forwards among twenty intros: a person with a busy
+    week, not a program. Found in review, 2026-09-21."""
+    rows = [srow(str(i), DANA, f"Intro: Alice <> P{i}") for i in range(17)]
+    rows += [srow(f"w{i}", DANA, f"Seattle Tech Week - Alice meet P{i}") for i in range(3)]
+    assert _kind(build_people(rows, ME, {}), DANA)[0] == "person"
+
+
+def test_a_tagged_program_subject_is_still_a_program():
+    rows = [srow(str(i), DANA, f"[EXT] Founders Lab 2025 - S{i} match") for i in range(3)]
+    assert _kind(build_people(rows, ME, {}), DANA) == ("program", "Founders Lab 2025")

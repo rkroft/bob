@@ -34,6 +34,7 @@ from pathlib import Path
 from string import Template
 
 from graph_model import chain_starters
+from people_store import display_label
 from ring_layout import (
     BRACKET_W, CX, CY, DOT_R, VIEW_H, VIEW_W, X_CONN, X_KID, X_ON,
     RingEntry,
@@ -72,13 +73,18 @@ def ring_entries(graph, principal: str, people=None) -> list:
     introduced to them, so that node is true of all and informative about none.
     """
     principal = (principal or "").lower()
-    services = {p.address for p in (people or []) if p.is_service}
+    # Platforms, programs and AI connectors are drawn like services: on the
+    # ring, in the non-person colour, their kind in the label.
+    who = {p.address: p for p in (people or [])}
+    services = {p.address for p in who.values()
+                if p.is_service or p.kind != "person"}
     starters = set(chain_starters(graph))
     out = []
     for n in graph.nodes:
         if n.id.lower() == principal or n.people_given < 1:
             continue
-        out.append(RingEntry(id=n.id, label=n.label, count=n.people_given,
+        out.append(RingEntry(id=n.id, label=display_label(n.id, n.label, who.get(n.id)),
+                             count=n.people_given,
                              is_service=n.id in services,
                              is_chain_starter=n.id in starters))
     out.sort(key=lambda e: (-e.count, e.label))
@@ -246,7 +252,8 @@ def _bracket_data(graph, entries, people=None) -> dict:
     management"). Node labels travel here as data, not markup -- the runtime
     reads them with `textContent`, never `innerHTML`."""
     label_of = {n.id: n.label for n in graph.nodes}
-    services = frozenset(p.address for p in (people or []) if p.is_service)
+    services = frozenset(p.address for p in (people or [])
+                         if p.is_service or p.kind != "person")
     out = {}
     for e in entries:
         b = bracket_layout(e.id, e.label, graph.chains, label_of, services)
