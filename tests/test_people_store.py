@@ -163,7 +163,7 @@ def test_a_real_person_still_gets_a_readable_fallback():
 
 
 # -- what kind of introducer: person, platform, AI connector, program -------
-# 2026-09-21: on a real first scan the stack rank read Jen, Levi, then a
+# 2026-09-21: on a real first scan the stack rank read two people, then a
 # talent-matching product's no-reply address and a mentor program's
 # coordinator. Rachel: platforms and programs stay in the ranking, called
 # out as what they are.

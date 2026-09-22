@@ -18,6 +18,8 @@ All people here are the repo's fixture cast.
 from __future__ import annotations
 
 import json
+
+import pytest
 import sys
 from pathlib import Path
 
@@ -391,3 +393,68 @@ def test_a_deleted_opener_under_the_principals_reply_is_still_disclosed(
         {"fetched": "v", "status": "ok"}])
     assert _scan(tmp_path, f) == 0
     assert "could not be read back" in capsys.readouterr().out
+
+
+def test_a_lost_opener_on_a_thread_that_made_no_row_is_not_warned_about(
+        tmp_path, capsys):
+    """The warning is about introducers shown; a thread that became no row
+    shows none. 7 of 8 warned threads on a real scan were like this (HAP-381)."""
+    s = "Intro to Kai Rivera?"
+    whole = [_m(f"w{i}", BEN if i % 2 == 0 else ME, [ME] if i % 2 == 0 else [BEN],
+                f"Re: {s}", f"2026-03-{2 + i:02d}T10:00:00Z") for i in range(8)]
+    f = _write(tmp_path / "threads.jsonl", [
+        {"id": "w", "messages": whole[-5:]}, {"id": "w", "messages": whole},
+        {"fetched": "w", "status": "ok"}])
+    assert _scan(tmp_path, f) == 0
+    out = capsys.readouterr().out
+    assert "could not be read back" not in out
+
+
+@pytest.mark.parametrize("prefix", ["SV:", "WG:", "TR:", "RV:"])
+def test_a_non_english_reply_as_her_oldest_message_is_still_a_reply(
+        prefix, tmp_path, capsys):
+    """One reply-word list for every reader of a subject (HAP-381)."""
+    whole = [_m(f"x{i}", ME if i % 2 == 0 else BEN, [BEN] if i % 2 == 0 else [ME],
+                f"{prefix} Intro: Alice <> Ben", f"2026-03-{2 + i:02d}T10:00:00Z")
+             for i in range(8)]
+    f = _write(tmp_path / "threads.jsonl", [
+        {"id": "x", "messages": whole[-5:]}, {"id": "x", "messages": whole},
+        {"fetched": "x", "status": "ok"}])
+    assert _scan(tmp_path, f) == 0
+    assert "could not be read back" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("reply", ["Moving you to bcc, thanks Dana!",
+                                   "Thanks for the intro Dana!"])
+def test_a_cut_off_thread_whose_reply_says_intro_is_fetched(reply, tmp_path, capsys):
+    """"Re: Connect with Alice?" does not read as an intro subject, but the
+    visible reply does. 4 missed intros on a real scan were this shape."""
+    msgs = [_m(f"y{i}", BEN if i % 2 == 0 else ME, [ME] if i % 2 == 0 else [BEN],
+               "Re: Connect with Alice?", f"2026-03-{2 + i:02d}T10:00:00Z")
+            for i in range(5)]
+    msgs[0]["snippet"] = reply
+    f = _write(tmp_path / "threads.jsonl", [{"id": "y", "messages": msgs}])
+    assert _todo(capsys, f)["batch"] == ["y"]
+
+
+def test_a_thread_given_up_on_is_still_mentioned_even_without_a_row(tmp_path, capsys):
+    """It looked like an introduction and was never read: a possible missed
+    intro, so it is said once even though no row shows a wrong introducer."""
+    f = _write(tmp_path / "threads.jsonl", [
+        _search_view(), {"fetched": "t1", "status": "blocked"},
+        {"fetched": "t1", "status": "blocked"}])
+    assert _scan(tmp_path, f) == 0
+    out = capsys.readouterr().out
+    assert "could not be read back" in out or "could not be opened" in out
+
+
+def test_a_given_up_thread_with_no_row_is_said_once(tmp_path, capsys):
+    s = "Intro to Kai Rivera?"
+    view = {"id": "z", "messages": [
+        _m(f"z{i}", BEN if i % 2 == 0 else ME, [ME] if i % 2 == 0 else [BEN],
+           f"Re: {s}", f"2026-03-{2 + i:02d}T10:00:00Z") for i in range(5)]}
+    f = _write(tmp_path / "threads.jsonl", [
+        view, {"fetched": "z", "status": "blocked"}, {"fetched": "z", "status": "blocked"}])
+    assert _scan(tmp_path, f) == 0
+    out = capsys.readouterr().out
+    assert "could not be opened" in out and "could not be read back" not in out

@@ -577,7 +577,7 @@ def _roster_rows(graph, people, principal: str, label_of: dict) -> tuple:
         elif p.address in connector_of:
             who = connector_of[p.address]
             how = "%s introduced you" % label_of.get(who, who)
-            # §4.4 shows the date beside it -- "Dana Whitford introduced you ·
+            # §4.4 shows the date beside it -- "Dana Okafor introduced you ·
             # Mar 2019". Only when it is known; never invented.
             # Guard on the FORMATTED value: a raw date is truthy even when it
             # is unparseable, which appended a separator with nothing after it.

@@ -22,10 +22,10 @@ from graph_model import build_graph, provenance  # noqa: E402
 from intro_store import IntroRow  # noqa: E402
 
 ME = "alice.tran@examplecorp.com"
-JUNE = "june.hale@example.com"          # the root: introduced by nobody
-LEO = "leo.vance@secondco.io"           # June introduced Alice to Leo
-EVA = "eva.bloom@thirdco.dev"           # Leo introduced Alice to Eva
-TERRY = "terry.cho@fourthco.net"        # Eva introduced Alice to Terry
+DANA = "dana.okafor@example.com"          # the root: introduced by nobody
+BEN = "ben.mercer@otherco.io"           # Dana introduced Alice to Ben
+NADIA = "nadia.okonjo@example.com"           # Ben introduced Alice to Nadia
+KAI = "kai.rivera@example.com"        # Nadia introduced Alice to Kai
 TODAY = date(2026, 8, 20)
 
 
@@ -35,12 +35,12 @@ def row(tid, introducer, introduced, d, direction="inbound"):
                     subject="Intro", thread_link="", confidence=0.9)
 
 
-def ladder(*, terry_date="2024-08-01"):
-    """June -> Leo -> Eva -> Terry, each introduction after the one before."""
+def ladder(*, kai_date="2024-08-01"):
+    """Dana -> Ben -> Nadia -> Kai, each introduction after the one before."""
     return [
-        row("1", JUNE, [ME, LEO], "2024-01-10"),
-        row("2", LEO, [ME, EVA], "2024-02-20"),
-        row("3", EVA, [ME, TERRY], terry_date),
+        row("1", DANA, [ME, BEN], "2024-01-10"),
+        row("2", BEN, [ME, NADIA], "2024-02-20"),
+        row("3", NADIA, [ME, KAI], kai_date),
     ]
 
 
@@ -50,66 +50,66 @@ def path(g, person):
 
 def test_a_person_nobody_introduced_has_no_origin():
     g = build_graph(ladder(), ME, today=TODAY)
-    assert provenance(g, JUNE) == ()
+    assert provenance(g, DANA) == ()
 
 
 def test_one_hop_is_the_common_case():
     g = build_graph(ladder(), ME, today=TODAY)
-    assert path(g, LEO) == [(JUNE, "2024-01-10")]
+    assert path(g, BEN) == [(DANA, "2024-01-10")]
 
 
 def test_two_hops_back():
     g = build_graph(ladder(), ME, today=TODAY)
-    assert path(g, EVA) == [(LEO, "2024-02-20"), (JUNE, "2024-01-10")]
+    assert path(g, NADIA) == [(BEN, "2024-02-20"), (DANA, "2024-01-10")]
 
 
 def test_three_hops_back():
     g = build_graph(ladder(), ME, today=TODAY)
-    assert path(g, TERRY) == [
-        (EVA, "2024-08-01"), (LEO, "2024-02-20"), (JUNE, "2024-01-10")]
+    assert path(g, KAI) == [
+        (NADIA, "2024-08-01"), (BEN, "2024-02-20"), (DANA, "2024-01-10")]
 
 
 def test_the_walk_stops_where_a_hop_did_not_pre_date_the_one_it_caused():
-    """Eva introduced Terry in February, but Leo only introduced Eva in June.
-    Eva cannot have reached Terry *because of* Leo, so the walk stops at Eva."""
+    """Nadia introduced Kai in February, but Ben only introduced Nadia in June.
+    Nadia cannot have reached Kai *because of* Ben, so the walk stops at Nadia."""
     rows = [
-        row("1", JUNE, [ME, LEO], "2024-01-10"),
-        row("2", LEO, [ME, EVA], "2024-06-01"),
-        row("3", EVA, [ME, TERRY], "2024-02-01"),
+        row("1", DANA, [ME, BEN], "2024-01-10"),
+        row("2", BEN, [ME, NADIA], "2024-06-01"),
+        row("3", NADIA, [ME, KAI], "2024-02-01"),
     ]
     g = build_graph(rows, ME, today=TODAY)
-    assert path(g, TERRY) == [(EVA, "2024-02-01")]
+    assert path(g, KAI) == [(NADIA, "2024-02-01")]
 
 
 def test_an_unknown_date_ends_the_walk_rather_than_guessing():
     rows = [
-        row("1", JUNE, [ME, LEO], "2024-01-10"),
-        row("2", LEO, [ME, EVA], ""),
-        row("3", EVA, [ME, TERRY], "2024-08-01"),
+        row("1", DANA, [ME, BEN], "2024-01-10"),
+        row("2", BEN, [ME, NADIA], ""),
+        row("3", NADIA, [ME, KAI], "2024-08-01"),
     ]
     g = build_graph(rows, ME, today=TODAY)
-    assert path(g, TERRY) == [(EVA, "2024-08-01")]
+    assert path(g, KAI) == [(NADIA, "2024-08-01")]
 
 
 def test_the_earliest_introduction_is_the_origin():
     """Introduced twice — the first one is how you came to know them."""
-    rows = ladder() + [row("4", EVA, [ME, LEO], "2025-03-03")]
+    rows = ladder() + [row("4", NADIA, [ME, BEN], "2025-03-03")]
     g = build_graph(rows, ME, today=TODAY)
-    assert path(g, LEO)[0] == (JUNE, "2024-01-10")
+    assert path(g, BEN)[0] == (DANA, "2024-01-10")
 
 
 def test_an_outbound_row_never_creates_provenance():
     """On an outbound row `introduced` holds two people connected to each
     other, not people the principal met. Folding those in would invent an
     origin that never happened."""
-    g = build_graph([row("1", ME, [LEO, EVA], "2024-01-10", "outbound")],
+    g = build_graph([row("1", ME, [BEN, NADIA], "2024-01-10", "outbound")],
                     ME, today=TODAY)
-    assert provenance(g, EVA) == ()
+    assert provenance(g, NADIA) == ()
 
 
 def test_the_principal_never_appears_in_a_path():
     g = build_graph(ladder(), ME, today=TODAY)
-    for person in (LEO, EVA, TERRY):
+    for person in (BEN, NADIA, KAI):
         assert ME not in [h.who for h in provenance(g, person)]
 
 
@@ -117,12 +117,12 @@ def test_a_cycle_terminates():
     """Two people who each introduced the other. Whatever the answer is, it
     must not loop."""
     rows = [
-        row("1", LEO, [ME, EVA], "2024-01-10"),
-        row("2", EVA, [ME, LEO], "2024-02-20"),
+        row("1", BEN, [ME, NADIA], "2024-01-10"),
+        row("2", NADIA, [ME, BEN], "2024-02-20"),
     ]
     g = build_graph(rows, ME, today=TODAY)
-    assert len(provenance(g, EVA)) <= 2
-    assert len(provenance(g, LEO)) <= 2
+    assert len(provenance(g, NADIA)) <= 2
+    assert len(provenance(g, BEN)) <= 2
 
 
 def test_an_unknown_person_has_no_origin():
@@ -145,67 +145,67 @@ def test_a_same_day_cycle_terminates():
     which is why the older two-date cycle test could not defend it.
     """
     rows = [
-        row("1", LEO, [ME, EVA], "2024-01-10"),
-        row("2", EVA, [ME, LEO], "2024-01-10"),
+        row("1", BEN, [ME, NADIA], "2024-01-10"),
+        row("2", NADIA, [ME, BEN], "2024-01-10"),
     ]
     g = build_graph(rows, ME, today=TODAY)
-    assert len(provenance(g, EVA)) == 1
-    assert len(provenance(g, LEO)) == 1
+    assert len(provenance(g, NADIA)) == 1
+    assert len(provenance(g, BEN)) == 1
 
 
 def test_a_same_day_hop_is_allowed_because_the_forward_chain_allows_it():
     """`Chain` treats onward as "on or after"; backward mirrors it. A shared
     date is not evidence against causation, so the walk continues."""
     rows = [
-        row("1", JUNE, [ME, LEO], "2024-03-01"),
-        row("2", LEO, [ME, EVA], "2024-03-01"),
-        row("3", EVA, [ME, TERRY], "2024-03-01"),
+        row("1", DANA, [ME, BEN], "2024-03-01"),
+        row("2", BEN, [ME, NADIA], "2024-03-01"),
+        row("3", NADIA, [ME, KAI], "2024-03-01"),
     ]
     g = build_graph(rows, ME, today=TODAY)
-    assert len(provenance(g, TERRY)) == 3
+    assert len(provenance(g, KAI)) == 3
 
 
 def test_a_dated_introduction_beats_an_undated_one_whatever_the_row_order():
-    dated = row("d", LEO, [ME, EVA], "2024-02-20")
-    undated = row("u", JUNE, [ME, EVA], "")
+    dated = row("d", BEN, [ME, NADIA], "2024-02-20")
+    undated = row("u", DANA, [ME, NADIA], "")
     for rows in ([undated, dated], [dated, undated]):
         g = build_graph(rows, ME, today=TODAY)
-        assert g.origins[EVA] == (LEO, "2024-02-20")
+        assert g.origins[NADIA] == (BEN, "2024-02-20")
 
 
 def test_an_undated_origin_is_still_an_origin():
     """"Dana introduced you" is true whether or not the date survived. The
     first hop is a fact; only what lies BEYOND it needs an ordering."""
-    g = build_graph([row("1", JUNE, [ME, EVA], "")], ME, today=TODAY)
-    assert g.origins[EVA] == (JUNE, "")
-    assert path(g, EVA) == [(JUNE, "")]
+    g = build_graph([row("1", DANA, [ME, NADIA], "")], ME, today=TODAY)
+    assert g.origins[NADIA] == (DANA, "")
+    assert path(g, NADIA) == [(DANA, "")]
 
 
 def test_an_undated_second_hop_is_dropped_rather_than_asserted():
-    """Leo introduced you to Eva at an unknown time. Eva introduced you to
-    Terry in August. Leo cannot be placed before that, so he is not part of
-    how you came to know Terry — even though he IS Eva's own origin."""
+    """Ben introduced you to Nadia at an unknown time. Nadia introduced you to
+    Kai in August. Ben cannot be placed before that, so he is not part of
+    how you came to know Kai — even though he IS Nadia's own origin."""
     rows = [
-        row("1", JUNE, [ME, LEO], "2024-01-10"),
-        row("2", LEO, [ME, EVA], ""),
-        row("3", EVA, [ME, TERRY], "2024-08-01"),
+        row("1", DANA, [ME, BEN], "2024-01-10"),
+        row("2", BEN, [ME, NADIA], ""),
+        row("3", NADIA, [ME, KAI], "2024-08-01"),
     ]
     g = build_graph(rows, ME, today=TODAY)
-    assert path(g, TERRY) == [(EVA, "2024-08-01")]
-    assert path(g, EVA) == [(LEO, "")]
+    assert path(g, KAI) == [(NADIA, "2024-08-01")]
+    assert path(g, NADIA) == [(BEN, "")]
 
 
 def test_same_day_introductions_break_the_tie_the_same_way_each_time():
-    a = row("a", JUNE, [ME, EVA], "2024-01-10")
-    b = row("b", LEO, [ME, EVA], "2024-01-10")
-    assert (build_graph([a, b], ME, today=TODAY).origins[EVA]
-            == build_graph([b, a], ME, today=TODAY).origins[EVA])
+    a = row("a", DANA, [ME, NADIA], "2024-01-10")
+    b = row("b", BEN, [ME, NADIA], "2024-01-10")
+    assert (build_graph([a, b], ME, today=TODAY).origins[NADIA]
+            == build_graph([b, a], ME, today=TODAY).origins[NADIA])
 
 
 def test_two_undated_introductions_break_the_tie_the_same_way_each_time():
     """The undated case had no tie-break at all: whichever row arrived first
     won. Row order is not data."""
-    a = row("a", JUNE, [ME, EVA], "")
-    b = row("b", LEO, [ME, EVA], "")
-    assert (build_graph([a, b], ME, today=TODAY).origins[EVA]
-            == build_graph([b, a], ME, today=TODAY).origins[EVA])
+    a = row("a", DANA, [ME, NADIA], "")
+    b = row("b", BEN, [ME, NADIA], "")
+    assert (build_graph([a, b], ME, today=TODAY).origins[NADIA]
+            == build_graph([b, a], ME, today=TODAY).origins[NADIA])

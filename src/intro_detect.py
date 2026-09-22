@@ -52,6 +52,9 @@ WEIGHTS: dict[str, float] = {
     # 0.30 at 0.10 and missed (measured 2026-09-21).
     "three_party_open": 0.25,
     "subject_meet": 0.35,         # "Kai, meet Alice"
+    # A later reply thanking someone for the introduction: independent of how
+    # the introducer worded theirs. With three people it clears the bar.
+    "thanked_intro": 0.25,
     # two-party shapes — see _shape_of()
     "request_subject": 0.45,      # "Intro to Nadia Okonjo?"
     "request_body": 0.40,         # "any chance you could introduce me to..."
@@ -122,7 +125,9 @@ FREEMAIL = frozenset({
 def _domain(addr: str) -> str:
     return addr.rpartition("@")[2].lower()
 
-SUBJECT_ARROW = re.compile(r"<\s*>|<>")
+# "A <> B", and "A >< B" between capitalised names -- not "ugh >< deadline"
+# or "</b><i>".
+SUBJECT_ARROW = re.compile(r"<\s*>|[A-Z][\w'.&)-]*\s*>\s*<\s*[A-Z(]")
 SUBJECT_KEYWORD = re.compile(
     # "connection" only as "a connection to/with someone": "VPN connection
     # issue" to two people is not an intro, "Acme connection to Alice" is.
@@ -153,7 +158,7 @@ SUBJECT_MEET = re.compile(
 # " / " and " x " between two name-ish tokens. Requires spaces so it doesn't
 # fire on dates, URLs, or "A/B test".
 SUBJECT_SEPARATOR = re.compile(
-    r"[A-Za-z]{2,}\s*(?:/|\+|&)\s*[A-Za-z]{2,}|"      # "Sarah/Rachel", "A & B"
+    r"[A-Za-z]{2,}\s*(?:/|\+|&)\s*[A-Za-z]{2,}|"      # "Nadia/Alice", "A & B"
     r"[A-Za-z]{2,}\s+(?:x|and|to)\s+[A-Za-z]{2,}"      # "A x B", "Nadia to Alice"
 )
 
@@ -233,7 +238,9 @@ BODY_HANDOFF = re.compile(
     r"thought\s+you\s+two|think\s+you\s+two|"
     r"you\s+(?:should|ought\s+to)\s+meet|"
     r"you\s+(?:two\s+)?(?:would|will|d)\s+hit\s+it\s+off|"
-    r"meet\s+my\s+(?:friend|colleague|former\s+colleague)"
+    r"meet\s+my\s+(?:friend|colleague|former\s+colleague)|"
+    r"(?:connect(?:ing)?|introduce|introducing)\s+the\s+two\s+of\s+you|"
+    r"this\s+email\s+is\s+to\s+connect\s+you"
     # Not "please meet": tried 2026-09-21 and dropped. Logistics uses it as
     # often as introductions do ("please meet us in the lobby", "please meet
     # Tuesday at 10"), and it found one intro in a 1,992-thread sample. The
@@ -241,6 +248,30 @@ BODY_HANDOFF = re.compile(
     r")",
     re.I,
 )
+
+
+# "Thanks for the intro Dana!", "Thank you for the generous introduction",
+# "thanks for introducing us". Not "thanks for the intro call", nor "the
+# introduction to your product" -- those are a meeting and a pitch.
+THANKED_INTRO = re.compile(
+    r"\b(?:thanks|thank\s+you|thx)\b[^.!?\n]{0,25}?\bfor\s+"
+    r"(?:(?:the|this|your|making\s+the)\s+)?(?:\w+\s+)?"
+    r"(?:"
+    # "...for the intro!", "...for the introduction, Dana", "...intro to Dana"
+    r"(?:intro(?:duction)?|connecting\s+us)"
+    # Ends there, or a name follows, or the sentence carries on past it --
+    # but never into a meeting, a deck or a product.
+    # No lowercase-name branch: measured on 4,522 real threads it matched
+    # nothing at all, while re-admitting "thanks for the intro slides/doc".
+    r"(?=\s*[.!?,;:)\]([-]|\s*$|\s+(?:to\s+)?(?-i:[A-Z])|\s+and\b)"
+    r"(?!\s*-?\s*(?:call|meeting|session|deck|chat|video|course|offer)\b"
+    r"|\s+(?:to\s+)?(?:the|this|that|our|your|a|an)\s+\w)"
+    r"|"
+    # "...for introducing us", "...for introducing me to Dana". A thing, not
+    # a person, means it is about work: "for introducing this idea".
+    r"introducing\s+(?:us\b|me\s+to\s+(?-i:[A-Z]))"
+    r")",
+    re.I)
 
 
 @dataclass
@@ -610,6 +641,11 @@ def detect(thread: Thread, principal: str | None = None, mode: Mode = "full") ->
         signals = [s for s in signals
                    if s not in ("subject_keyword", "subject_separator")]
 
+    if mode == "full" and any(
+            m.body_text and THANKED_INTRO.search(m.body_text)
+            for m in thread.messages[1:]):
+        signals.append("thanked_intro")
+
     if mode == "full":
         body = _first_body(thread)
         if "late_handoff" in signals:
@@ -688,4 +724,9 @@ def search_queries() -> Sequence[str]:
         '"please meet"', '"connect you with"', '"you should meet"', '"meet my"',
         '"put you two in touch"', '"introduce you two"',
         '"introduce the two of you"', '"e-intro"',
+        # Added 2026-09-22: the thank-you reply, found in 6 of 9 intros no
+        # other query matched. Gmail matches whole words, so each form is its
+        # own query.
+        '"for the intro"', '"for the introduction"', '"for introducing"',
+        '"the two of you"',
     )

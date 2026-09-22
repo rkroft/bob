@@ -136,6 +136,13 @@ class Thread:
         self.messages.sort(key=lambda m: (m.date is None, m.date or datetime.min))
 
 
+# Reply and forward prefixes across mail clients and languages: English re/fw,
+# German aw/wg, Nordic sv, French tr, Spanish rv, Portuguese res/enc. Shared by
+# people_store._LEAD and bob._REPLY_PREFIX so those two cannot drift; the mbox
+# and forward-prefix patterns still carry their own, narrower lists (HAP-381).
+REPLY_WORDS = r"re|res|fwd?|fw|aw|sv|wg|tr|rv|enc"
+
+
 def participants(msg: Message) -> set[str]:
     """Everyone visible on a message. BCC is invisible by definition — which is
     exactly why the connector appears to *vanish* in the structural signal."""

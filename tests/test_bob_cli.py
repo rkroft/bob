@@ -121,10 +121,10 @@ def sample_intros(tmp_path):
         IntroRow("t1", "2026-01-05", "inbound", "dana.okafor@example.com",
                  (ME,), "Meet Dana", "", 0.9),
         IntroRow("t2", "2026-02-10", "inbound", "dana.okafor@example.com",
-                 ("carol.nguyen@example.com", "erin.walsh@example.com"),
-                 "Carol <> Erin", "", 0.9),
+                 ("ben.mercer@otherco.io", "nadia.okonjo@example.com"),
+                 "Ben <> Nadia", "", 0.9),
         IntroRow("t3", "2026-03-15", "outbound", ME,
-                 ("frank.osei@example.com",), "Intro to Frank", "", 0.9),
+                 ("kai.rivera@example.com",), "Intro to Kai", "", 0.9),
     ]
     out = tmp_path / "intros.csv"
     write_intros(rows, out)

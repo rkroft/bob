@@ -293,8 +293,8 @@ def provenance(graph, person: str) -> tuple:
     claim about cause, and cause is a claim about time:
 
     **Every hop must have happened on or before the introduction it caused.**
-    If Eva introduced you to Terry in February but Leo only introduced you to
-    Eva in June, then Leo is not why you know Terry, whatever the rows say --
+    If Nadia introduced you to Kai in February but Ben only introduced you to
+    Nadia in June, then Ben is not why you know Kai, whatever the rows say --
     the walk stops. Same day is allowed, mirroring `Chain`'s forward "on or
     after": a shared date is not evidence against causation.
 

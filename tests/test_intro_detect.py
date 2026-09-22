@@ -668,10 +668,10 @@ def test_the_net_carries_the_wording_it_was_measured_missing(query):
 def test_a_forwarded_newsletter_is_not_an_introduction():
     """"Fwd: Introducing <a product>" sent to two friends is marketing passed
     along. The only false positive in 59 new finds, 2026-09-21."""
-    body = ("A whole series!\n---------- Forwarded message ---------\n"
-            "From: Town Hall <news@example.com>\nSubject: Introducing")
+    body = ("Worth a look!\n---------- Forwarded message ---------\n"
+            "From: Lantern <news@example.com>\nSubject: Introducing")
     t = Thread(id="t_fwdnews", messages=[
-        msg(1, CONNECTOR, [ALICE, BEN], "Fwd: Introducing the Salon Series", body)])
+        msg(1, CONNECTOR, [ALICE, BEN], "Fwd: Introducing the Lantern Series", body)])
     d = detect(t, principal=ALICE)
     assert not d.is_intro and d.disqualified_by == "forwarded_bulk"
 
@@ -688,10 +688,10 @@ def test_a_forwarded_intro_from_a_person_still_counts():
 def test_a_forwarded_newsletter_in_a_one_line_snippet_is_not_an_introduction():
     """The connector's snippet collapses the body onto one line, so the quoted
     From is not at the start of a line. Found in review, 2026-09-21."""
-    body = ("A whole series! - Nic ---------- Forwarded message --------- "
-            "From: Town Hall <news@example.com> Date: Mon")
+    body = ("Worth a look! - Dana ---------- Forwarded message --------- "
+            "From: Lantern <news@example.com> Date: Mon")
     t = Thread(id="t_fwd1", messages=[
-        msg(1, CONNECTOR, [ALICE, BEN], "Fwd: Introducing the Salon Series", body)])
+        msg(1, CONNECTOR, [ALICE, BEN], "Fwd: Introducing the Lantern Series", body)])
     assert detect(t, principal=ALICE).disqualified_by == "forwarded_bulk"
 
 
@@ -775,8 +775,8 @@ _NEWS = ("See this! ---------- Forwarded message --------- "
 @pytest.mark.parametrize("subject", [
     "Fwd: Intro to AI & ML webinar", "Fwd: Webinar: Introduction to AI/ML",
     "Fwd: Intro", "Fwd: Introduction",
-    "[EXT] Fwd: Introducing the Salon Series", "WG: Introducing the Salon Series",
-    "TR: Introducing the Salon Series", "Introducing the Salon Series",
+    "[EXT] Fwd: Introducing the Lantern Series", "WG: Introducing the Lantern Series",
+    "TR: Introducing the Lantern Series", "Introducing the Lantern Series",
 ])
 def test_forwarded_newsletters_stay_out_whatever_the_prefix(subject):
     t = Thread(id="t_fn", messages=[
@@ -802,3 +802,120 @@ def test_a_forwarded_platform_intro_with_a_pair_subject_is_a_known_trade():
     assert detect(t, principal=ALICE).disqualified_by == "forwarded_bulk"
     t.messages[0].subject = "Fwd: Alice <> Ben"
     assert detect(t, principal=ALICE).is_intro
+
+
+# --- the thank-you reply, 2026-09-22 ---------------------------------------
+# Hand-checking 22 intros a full scan missed: in 6 of 9 the only wording a
+# search or a detector could hold on to was the reply -- "Thanks for the intro
+# Dana!" -- which does not depend on how the introducer phrased theirs.
+
+def test_a_reply_thanking_for_the_intro_makes_a_three_person_thread_an_intro():
+    t = Thread(id="t_ty", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Amazing people", "Alice, Ben: see below.", day=1),
+        msg(2, BEN, [ALICE, CONNECTOR], "Re: Amazing people",
+            "Thanks for the intro Dana! Alice, free Tuesday?", day=2),
+    ])
+    d = detect(t, principal=ALICE)
+    assert d.is_intro and "thanked_intro" in d.signals and d.connector == CONNECTOR
+
+
+@pytest.mark.parametrize("body", [
+    "Thanks for the intro call today, deck attached.",
+    "Thank you for the introduction to your product.",
+    "Thanks for the introduction meeting yesterday.",
+])
+def test_thanks_for_an_intro_call_is_not_the_signal(body):
+    t = Thread(id="t_tn", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Follow up", "Great to meet.", day=1),
+        msg(2, BEN, [ALICE, CONNECTOR], "Re: Follow up", body, day=2),
+    ])
+    assert "thanked_intro" not in detect(t, principal=ALICE).signals
+
+
+def test_thanks_alone_on_a_two_person_thread_is_not_an_intro():
+    t = Thread(id="t_t2", messages=[
+        msg(1, CONNECTOR, [ALICE], "Hello", "Hi!", day=1),
+        msg(2, ALICE, [CONNECTOR], "Re: Hello", "Thanks for the intro!", day=2),
+    ])
+    assert not detect(t, principal=ALICE).is_intro
+
+
+@pytest.mark.parametrize("body", [
+    "Connecting the two of you. Ben is looking for research help.",
+    "Hi both, this email is to connect you.",
+    "I'd love to introduce the two of you.",
+])
+def test_more_handoff_wording(body):
+    t = Thread(id="t_hw", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Hello", body, day=1)])
+    assert "body_handoff" in detect(t, principal=ALICE).signals
+
+
+@pytest.mark.parametrize("query", ['"for the intro"', '"for the introduction"',
+                                   '"for introducing"', '"the two of you"'])
+def test_the_net_carries_the_thank_you_wording(query):
+    assert query in search_queries()
+
+
+@pytest.mark.parametrize("subject", ["Nadia >< Kai", "Alice >  < Ben"])
+def test_the_reversed_arrow_is_an_arrow(subject):
+    """"A >< B" is as common as "A <> B" in a real mailbox (2026-09-22)."""
+    t = Thread(id="t_ra", messages=[msg(1, CONNECTOR, [ALICE, BEN], subject, None)])
+    assert "subject_arrow" in detect(t, principal=ALICE).signals
+
+
+@pytest.mark.parametrize("body", [
+    "Thank you for introducing yourself!", "Thanks for the intro to the team.",
+    "Thanks for the intro-call today.", "Thanks for the intro chat.",
+    "Thanks for introducing me to the product.",
+])
+def test_more_thanks_that_are_not_for_an_introduction(body):
+    t = Thread(id="t_tn2", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Follow up", "Great to meet.", day=1),
+        msg(2, BEN, [ALICE, CONNECTOR], "Re: Follow up", body, day=2)])
+    assert "thanked_intro" not in detect(t, principal=ALICE).signals
+
+
+@pytest.mark.parametrize("subject", ["ugh >< deadline moved",
+                                     "<b>Sale</b><i>today</i>"])
+def test_an_emoticon_or_markup_is_not_an_arrow(subject):
+    t = Thread(id="t_em", messages=[msg(1, CONNECTOR, [ALICE, BEN], subject, None)])
+    assert "subject_arrow" not in detect(t, principal=ALICE).signals
+
+
+@pytest.mark.parametrize("body", [
+    "Thanks for introducing this idea at standup.",
+    "Thank you for the kind introduction yesterday at the panel.",
+    "Thanks for introducing the new pricing model.",
+    "Thanks for introducing our team to the tool.",
+    "Thank you for the introduction to the course material.",
+    # An artifact, not a person. These are what a lowercase-name branch let
+    # back in, and none of the other guards catches them.
+    "Thanks for the intro slides!",
+    "Thanks for the intro doc.",
+    "Thanks for the intro materials, very helpful",
+    "Thanks for the intro pricing.",
+])
+def test_thanks_for_introducing_a_thing_is_not_an_introduction(body):
+    """A thank-you names a person, or it is about work. On a three-person
+    thread this scored 0.50 and became a row someone would be thanked for
+    (gate review, 2026-09-22)."""
+    t = Thread(id="t_ti", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Pricing deck", "Both -- see attached.", day=1),
+        msg(2, BEN, [ALICE, CONNECTOR], "Re: Pricing deck", body, day=2)])
+    d = detect(t, principal=ALICE)
+    assert "thanked_intro" not in d.signals and not d.is_intro
+
+
+@pytest.mark.parametrize("body", [
+    "Thanks for the intro [bcc]!",
+    "thanks for the wonderful intro - I always enjoy these.",
+    "Thank you for the introduction and the kind words Dana",
+])
+def test_a_thank_you_in_other_shapes_still_counts(body):
+    """Measured on the real corpus: the capital-letter rule alone lost nine
+    genuine thank-yous (gate review, 2026-09-22)."""
+    t = Thread(id="t_ts", messages=[
+        msg(1, CONNECTOR, [ALICE, BEN], "Intro", "Both -- meet.", day=1),
+        msg(2, BEN, [ALICE, CONNECTOR], "Re: Intro", body, day=2)])
+    assert "thanked_intro" in detect(t, principal=ALICE).signals

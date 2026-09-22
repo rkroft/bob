@@ -46,7 +46,7 @@ def _looks_same(a: str, b: str) -> str:
         if len(y) >= MIN_TOKEN and len(x) == len(y) + 1 and x.endswith(y):
             return "initial and surname"
     # "okafor" / "dana.okafor": the one name is the other's surname. Not the
-    # first name -- rachel@ and rachel.trobman@ were different people.
+    # first name -- nadia@ and nadia.okonjo@ can be different people.
     short, full = sorted((ta, tb), key=len)
     if (len(short) == 1 and len(full) >= 2 and short[0] == full[-1]
             and len(short[0]) >= MIN_TOKEN):
@@ -169,15 +169,19 @@ def apply(rows: Sequence[IntroRow], answers: Mapping) -> list:
 
 
 def write_to(rows: Sequence[IntroRow], merged: Mapping) -> dict:
-    """head -> the group's most recently seen address, where that differs.
+    """head -> the group's most recently used address, where that differs.
 
     A merged person is ranked under their busiest address but emailed at the
     newest: one last used years ago may be a former employer's mailbox. The
     same rule the CRM uses for a conflict -- the most recent address wins.
     """
+    # Used: they sent from it, or the principal wrote to it (an intro the
+    # principal made). Someone else cc'ing an old work address is neither.
     last: dict = {}
     for r in rows:
-        for a in (r.introducer, *r.introduced):
+        used = [r.introducer] + (list(r.introduced) if r.direction == "outbound"
+                                 else [])
+        for a in used:
             if a and r.date > last.get(a, ""):
                 last[a] = r.date
     groups: dict = {}
@@ -185,7 +189,9 @@ def write_to(rows: Sequence[IntroRow], merged: Mapping) -> dict:
         groups.setdefault(head, {head}).add(a)
     out = {}
     for head, members in groups.items():
-        newest = max(members, key=lambda m: (last.get(m, ""), m == head))
+        # Ties: the head, then alphabetical -- the same answer every run.
+        newest = max(sorted(members),
+                     key=lambda m: (last.get(m, ""), m == head))
         if newest != head:
             out[head] = newest
     return out

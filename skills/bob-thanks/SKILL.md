@@ -88,7 +88,7 @@ surveillance wherever it appears, including in the prompt.
 Nine of these look like they took hold. What came of them?
 A sentence each, or "skip".
 
-1. Dana Whitford → Sarah Chen · March 2019 · you met 3 times   [thread]
+1. Dana Okafor → Ben Mercer · March 2019 · you met 3 times   [thread]
 >
 ```
 

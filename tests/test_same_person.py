@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
 from intro_store import IntroRow  # noqa: E402
 from same_person import (  # noqa: E402
@@ -48,8 +49,8 @@ def test_a_surname_alone_matches_the_full_name():
 
 
 def test_a_first_name_inside_a_fuller_one_is_not_asked():
-    """Measured on a real scan: rachel@ / rachel.trobman@, rebecca@ /
-    rebecca.plevin@ -- a shared first name is not evidence."""
+    """Measured on a real scan: a shared first name (nadia@ / nadia.okonjo@,
+    dana@ / dana.okafor@) is not evidence."""
     assert not _pairs(["nadia@example.com", "nadia.okonjo@otherco.io"])
 
 
@@ -245,3 +246,43 @@ def test_an_answer_about_an_address_bob_never_saw_is_refused(tmp_path, capsys):
     assert bob.main(["same-person", "dokafor@example.com", "okafr@otherco.io",
                      "--yes", "--data-dir", str(d), "--principal", ME]) == 1
     assert not (d / "same-person.csv").exists()
+
+
+def test_write_to_counts_only_addresses_the_person_sent_from():
+    """Being cc'd at an old work address by someone else is not using it
+    (HAP-381): "most recently used" means sent from."""
+    from same_person import write_to
+    rows = [IntroRow("o", "2022-01-01", "inbound", "dokafor@example.com", (ME,),
+                     "Intro", "", 0.9),
+            IntroRow("n", "2023-01-01", "inbound", "okafor@otherco.io", (ME,),
+                     "Intro", "", 0.9),
+            IntroRow("c", "2025-01-01", "inbound", "kai.rivera@example.com",
+                     (ME, "dokafor@example.com"), "Intro", "", 0.9)]
+    merged = {"okafor@otherco.io": "dokafor@example.com"}
+    assert write_to(rows, merged) == {"dokafor@example.com": "okafor@otherco.io"}
+
+
+def test_write_to_breaks_a_tie_the_same_way_every_time():
+    from same_person import write_to
+    rows = [IntroRow(f"h{i}", "2022-01-01", "inbound", "dokafor@example.com",
+                     (ME,), "Intro", "", 0.9) for i in range(3)]
+    rows += [IntroRow("b", "2024-01-01", "inbound", "okafor@otherco.io", (ME,),
+                      "Intro", "", 0.9),
+             IntroRow("c", "2024-01-01", "inbound", "dana.okafor@otherco.io",
+                      (ME,), "Intro", "", 0.9)]
+    merged = {"okafor@otherco.io": "dokafor@example.com",
+              "dana.okafor@otherco.io": "dokafor@example.com"}
+    assert write_to(rows, merged) == {"dokafor@example.com": "dana.okafor@otherco.io"}
+
+
+def test_write_to_counts_addresses_the_principal_wrote_to():
+    """One 2019 intro from the old address must not beat four 2025 intros the
+    principal made to the other one (gate review, 2026-09-22)."""
+    from same_person import write_to
+    rows = [IntroRow("o", "2019-01-01", "inbound", "dokafor@example.com", (ME,),
+                     "Intro", "", 0.9)]
+    rows += [IntroRow(f"n{i}", "2025-01-0%d" % (i + 1), "outbound", ME,
+                      ("okafor@otherco.io", f"p{i}@otherco.io"), "Intro", "", 0.9)
+             for i in range(4)]
+    merged = {"dokafor@example.com": "okafor@otherco.io"}
+    assert write_to(rows, merged) == {}

@@ -236,9 +236,9 @@ def test_quoted_header_outranks_signature_and_greeting():
 def test_a_website_is_not_a_name():
     """A signature puts a URL where a name sits, and it passes every other
     test — letters, short, no "@". This reached a real leaderboard."""
-    assert not is_plausible("AmyJacksonTalent.com")
+    assert not is_plausible("DanaOkaforTalent.com")
     assert not is_plausible("example.io")
-    assert merge({}, [Name(DANA, "AmyJacksonTalent.com", "quoted_header")]) == {}
+    assert merge({}, [Name(DANA, "DanaOkaforTalent.com", "quoted_header")]) == {}
 
 
 def test_initials_and_abbreviations_still_pass():

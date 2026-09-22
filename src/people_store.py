@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from intro_store import IntroRow
+from mail_source import REPLY_WORDS
 
 PEOPLE_COLUMNS = (
     "address", "name", "intros_for_you", "intros_you_made", "introduced_you_to",
@@ -140,7 +141,7 @@ _INTRO_WORDS = re.compile(
     r"\b(?:intro\w*|connect\w*|opt-?in|meet\w*|request)\b", re.I)
 # "[EXT] ", "AW: ", "Re: " ahead of the subject a program actually uses.
 _LEAD = re.compile(
-    r"^\s*(?:\[[^\]]{1,20}\]\s*|(?:re|aw|sv|wg|tr|fwd?|fw)\s*:\s*)+", re.I)
+    rf"^\s*(?:\[[^\]]{{1,20}}\]\s*|(?:{REPLY_WORDS})\s*:\s*)+", re.I)
 PROGRAM_MIN = 3
 
 

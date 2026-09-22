@@ -45,3 +45,6 @@ dumps/
 # backstop.
 .bob/
 .bob-probe-*
+
+# The audit's private denylist is the contact list: never in the repo.
+*denylist*.txt

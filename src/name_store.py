@@ -19,9 +19,9 @@ between scans and quietly change the graph.
 |---|---|---|
 | `header` | a real `From`/`To` display name (mbox path only) | the person's own spelling |
 | `quoted_header` | the attribution a mail client writes when quoting a reply — *"On Tue… Dana Okafor <dana.okafor@example.com> wrote:"* | a header one hop removed: the client copied it, name and address already paired |
-| `signature` | a sign-off in an intro body — *"Cheers, Josh Brewer"* | strong; they wrote it |
-| `greeting` | an opener — *"Hi Karina and Rachel"* | first names only, and the pairing to an address is inferred |
-| `local_part` | `josh.brewer@` -> Josh Brewer | a guess, and wrong for handles |
+| `signature` | a sign-off in an intro body — *"Cheers, Ben Mercer"* | strong; they wrote it |
+| `greeting` | an opener — *"Hi Kai and Alice"* | first names only, and the pairing to an address is inferred |
+| `local_part` | `ben.mercer@` -> Ben Mercer | a guess, and wrong for handles |
 
 `local_part` is deliberately the weakest and is **not** written to this file.
 It stays where it already lives, as a render-time fallback, so that "Bob knows
@@ -60,7 +60,7 @@ _QUOTED = re.compile(
 _MAILTO = re.compile(r"<\s*mailto:[^<>]*>")
 
 # Leading quote markers, per line. A reply nested three deep wraps its
-# attribution across lines as ">>> Eve Blossom <\n>>> eve@example.com>", so the
+# attribution across lines as ">>> Dana Okafor <\n>>> dana@example.com>", so the
 # address is unreachable until these are gone.
 _QUOTE_LINE = re.compile(r"^[ \t]*(?:>[ \t]*)+", re.M)
 
@@ -116,7 +116,7 @@ class Name:
 def _clean(name: str) -> str:
     """Trim quoting and stray punctuation from a name lifted out of prose.
 
-    A sign-off arrives as "Josh Brewer," or "-- Josh Brewer" far more often than
+    A sign-off arrives as "Ben Mercer," or "-- Ben Mercer" far more often than
     it arrives clean, and the comma would otherwise become part of the label on
     the graph.
     """
@@ -145,7 +145,7 @@ def is_plausible(name: str) -> bool:
     if not n or "@" in n or len(n) > 60:
         return False
     # A signature line often puts a website where a name would sit, and
-    # "AmyJacksonTalent.com" passes every other test here — letters, short,
+    # "DanaOkaforTalent.com" passes every other test here — letters, short,
     # no address. It appeared on a real leaderboard as a person.
     if _DOMAINISH.search(n):
         return False
@@ -219,7 +219,7 @@ def merge(existing: Mapping[str, Name], incoming: Iterable[Name]) -> dict:
     happened to be read first.
 
     A person signing mail as "Marcus Leyva" while their full name is "Marcus Leyva
-    Reed" is ordinary, and the CRM holding a third form is ordinary too —
+    Lee" is ordinary, and the CRM holding a third form is ordinary too —
     which is why Bob reports what the mail says and does not reconcile.
     """
     out = dict(existing)

@@ -29,7 +29,7 @@ from preflight import (  # noqa: E402
     DURABLE, as_dir, confirm_marker, preflight, stamp_marker)
 from scan_coverage import Coverage, beside, read_coverage  # noqa: E402
 from intro_store import read_intros, write_intros  # noqa: E402
-from mail_source import best_name, normalize_addr  # noqa: E402
+from mail_source import REPLY_WORDS, best_name, normalize_addr  # noqa: E402
 from last_contact import is_automated, last_direct_contact  # noqa: E402
 import same_person  # noqa: E402
 from people_store import (  # noqa: E402
@@ -38,8 +38,9 @@ from people_store import (  # noqa: E402
 from mbox_source import MboxSource  # noqa: E402
 from render import render  # noqa: E402
 from intro_detect import (  # noqa: E402
-    HARD_NEGATIVE_SENDERS, REQUEST_SUBJECT, SUBJECT_ARROW, SUBJECT_INTRO_ONLY,
-    SUBJECT_KEYWORD, SUBJECT_PAIR_INTRO, detect, search_queries,
+    BCC_HANDOFF, BODY_HANDOFF, HARD_NEGATIVE_SENDERS, REQUEST_SUBJECT,
+    SUBJECT_ARROW, SUBJECT_INTRO_ONLY, SUBJECT_KEYWORD, SUBJECT_PAIR_INTRO,
+    THANKED_INTRO, detect, search_queries,
 )
 from scan import scan, scan_threads  # noqa: E402
 from connector_source import ConnectorSource, missing_opener  # noqa: E402
@@ -326,9 +327,16 @@ def cmd_scan(args) -> int:
         # without its opener may credit a later replier. Counted, never
         # silently kept.
         pending, gave_up, absent = _openers(source)
-        unfetched, unrecoverable = len(pending), len(gave_up) + len(absent)
+        # Only threads that became a row can show a wrong introducer, so only
+        # those are counted: 7 of 8 on a real scan produced none (HAP-381).
+        with_row = {r.thread_id for r in rows}
+        unfetched = len(pending)
+        unrecoverable = sum(1 for t in gave_up + absent if t in with_row)
+        # Given up on and no row: it looked like an introduction and was never
+        # read, so it may be one Bob missed. Said once, separately.
+        unopened = sum(1 for t in gave_up if t not in with_row)
     else:
-        unfetched = unrecoverable = 0
+        unfetched = unrecoverable = unopened = 0
         rows = scan(source, link_for=link_for, names_out=seen_names,
                     limit_per_query=args.limit_net, capped_out=capped,
                     contacted_out=contacted, automated_out=automated,
@@ -389,6 +397,11 @@ def cmd_scan(args) -> int:
               f"could not be read back to the first email (it failed, or the "
               f"email is gone). The introducer shown on those may be someone "
               f"who replied later.")
+    if unopened:
+        print(f"\n⚠  {_n(unopened, 'thread', 'threads')} that looked like "
+              f"{'an introduction' if unopened == 1 else 'introductions'} "
+              f"could not be opened, so {'it is' if unopened == 1 else 'they are'}"
+              f" not in your table.")
     if isinstance(source, ConnectorSource):
         # The connector's answer to `capped`. Same rule, different mechanism:
         # never let a bounded search pass for an exhaustive one.
@@ -706,7 +719,7 @@ OPENER_MAX_FAILURES = 2
 # Reply prefixes, including an out-of-office's, stripped before a subject is
 # read -- "Automatic reply: Intro: Alice <> Ben" is still that intro's subject.
 _REPLY_PREFIX = re.compile(
-    r"^\s*(?:(?:re|fwd?|aw|automatic reply|auto(?:-| )?reply|out of office)"
+    rf"^\s*(?:(?:{REPLY_WORDS}|automatic reply|auto(?:-| )?reply|out of office)"
     r"\s*:\s*)+", re.I)
 _INTRO_SUBJECT = (SUBJECT_ARROW, SUBJECT_KEYWORD, SUBJECT_INTRO_ONLY,
                   SUBJECT_PAIR_INTRO, REQUEST_SUBJECT)
@@ -732,6 +745,13 @@ def _worth_opening(t) -> bool:
     for m in t.messages:
         subject = _REPLY_PREFIX.sub("", m.subject or "")
         if any(rx.search(subject) for rx in _INTRO_SUBJECT):
+            return True
+        # A visible reply that says intro -- "moving you to bcc", "thanks for
+        # the intro" -- under a subject that doesn't ("Re: Connect with…").
+        # 4 intros a real scan missed were this shape; 21 more fetches.
+        body = m.body_text or ""
+        if body and (BCC_HANDOFF.search(body) or BODY_HANDOFF.search(body)
+                     or THANKED_INTRO.search(body)):
             return True
     # A handoff seen on a cut-off thread may be an artefact of the cut: the
     # people on the missing messages all look newly added. Fetch to be sure.

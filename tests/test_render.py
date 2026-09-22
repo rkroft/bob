@@ -543,16 +543,16 @@ def test_the_roster_names_the_earliest_introducer_not_the_alphabetical_one(tmp_p
 
     g = build_graph([r("1", early, "2019-03-01"), r("2", late, "2025-06-01")],
                     me, today=date(2026, 8, 20),
-                    names={early: "Zoe Marsh", late: "Aaron Webb"})
+                    names={early: "Dana Okafor", late: "Ben Mercer"})
 
     out = tmp_path / "n.html"
     render(g, out, principal=me,
-           people=[Person(cy, "Cy Nakamura", 0, 0, (), last_contact="2026-02-02")],
+           people=[Person(cy, "Kai Rivera", 0, 0, (), last_contact="2026-02-02")],
            intros=[])
     page = out.read_text()
 
-    assert "Zoe Marsh introduced you" in page
-    assert "Aaron Webb introduced you" not in page
+    assert "Dana Okafor introduced you" in page
+    assert "Ben Mercer introduced you" not in page
 
 
 def _how(rows_in, names, person, principal="alice@examplecorp.com"):
@@ -568,7 +568,7 @@ def _how(rows_in, names, person, principal="alice@examplecorp.com"):
     from datetime import date
     g = build_graph(rows_in, principal, today=date(2026, 8, 20), names=names)
     label_of = {n.id: n.label for n in g.nodes}
-    rows = _roster_rows(g, [Person(person, "Cy Nakamura", 0, 0, ())],
+    rows = _roster_rows(g, [Person(person, "Kai Rivera", 0, 0, ())],
                            principal, label_of)
     return rows[0]["how"]
 
